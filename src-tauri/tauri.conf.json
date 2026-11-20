@@ -14,12 +14,16 @@
       {
         "label": "main",
         "title": "User",
-        "width": 1280,
-        "height": 720,
+        "width": 1024,
+        "height": 576,
         "minWidth": 640,
         "minHeight": 360,
-        "backgroundColor": "#000005",
-        "center": true
+        "center": true,
+        "resizable": true,
+        "fullscreen": false,
+        "maximized": false,
+        "decorations": true,
+        "backgroundColor": "#000005"
       }
     ],
     "security": {

@@ -32,6 +32,10 @@ npm run package    # build an installer / app bundle (tauri build)
 
 The first time you open it, the settings panel (`F1`) asks what should power him.
 
+User opens in a normal, resizable window (not fullscreen). The default size is **1024×576**: 16:9 like a video, and
+small enough to fit a 1366×768 laptop screen with its title bar and taskbar. On a 1440p or 4K monitor,
+**1280×720** or **1600×900** look good too; drag the window edge to resize. The smallest it can go is 640×360.
+
 ## Installers
 
 [`.github/workflows/build-installers.yml`](.github/workflows/build-installers.yml) builds installers on GitHub Actions:
