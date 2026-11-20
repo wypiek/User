@@ -240,11 +240,12 @@ export async function loadCharacter(url: string): Promise<Character> {
   legR.add(at(mesh(parts.legA, matBlack), 0, -100, 0));
 
   // ---- props for drawing: a notebook (held in front of his chest) and a pen (in his right hand)
-  const pageMat = new THREE.MeshBasicMaterial({ color: 0xc9cfff }); // the page, a little moonlit; gets the paint canvas
-  const edgeMat = new THREE.MeshLambertMaterial({ color: 0xd8d4c8 });
-  const coverMat = new THREE.MeshLambertMaterial({ color: 0x3a0c10 });
+  const pageMat = new THREE.MeshBasicMaterial({ color: 0xe2e6ff }); // the page, a little moonlit; gets the paint canvas
+  // bright enough to read against him at night: a red cover and white paper edges that glow a little
+  const edgeMat = new THREE.MeshLambertMaterial({ color: 0xf0ece0, emissive: 0x55534c });
+  const coverMat = new THREE.MeshLambertMaterial({ color: 0xd8382a, emissive: 0x6a1410 });
   // box faces: +x, -x, +y, -y, +z (the page), -z (the cover)
-  const notebook = new THREE.Mesh(new THREE.BoxGeometry(150, 112, 8), [edgeMat, edgeMat, edgeMat, edgeMat, pageMat, coverMat]);
+  const notebook = new THREE.Mesh(new THREE.BoxGeometry(190, 142, 10), [edgeMat, edgeMat, edgeMat, edgeMat, pageMat, coverMat]);
   notebook.castShadow = true;
   const note = new THREE.Group();
   note.add(notebook);
@@ -400,10 +401,10 @@ const SUMMON_DEBRIS: [number, number, number][] = [[0.35, 0, 14], [0.75, 3.2, 8]
 // Notebook positions are in torso space (model units): chest front is z = 50.
 // noteFlip 0 = page toward him, cover toward you; 1 = page toward you.
 const NOTE_DRAW = { noteOn: 1, noteX: 0, noteY: 105, noteZ: 115, noteTilt: 1.0, noteFlip: 0, noteSpin: 0 }; // lying in his hand, page up
-const NOTE_SHOW = { noteOn: 1, noteX: 0, noteY: 140, noteZ: 140, noteTilt: 0, noteSpin: 0 }; // held up in front of him
+const NOTE_SHOW = { noteOn: 1, noteX: 0, noteY: 150, noteZ: 150, noteTilt: 0, noteSpin: 0 }; // held up in front of him
 const HOLD_LEFT = { armLX: -1.1, armLZ: -0.75 }; // left hand under the notebook
 const PEN_ON_PAGE = { armRX: -1.15, armRZ: 0.7 };
-const BOTH_HOLD = { armLX: -1.29, armLZ: -0.5, armRX: -1.29, armRZ: 0.5 }; // both hands on its edges
+const BOTH_HOLD = { armLX: -1.3, armLZ: -0.4, armRX: -1.3, armRZ: 0.4 }; // both hands on its edges
 const DRAW = {
   // takes the notebook from behind his back, then the pen from his pocket
   drawPrep: C({ len: 2.6, keys: [

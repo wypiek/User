@@ -60,9 +60,11 @@ export const bridge = {
     }
   },
   /** Ask User for a drawing; returns the SVG strokes his paint program traces. */
-  async draw(subject: string): Promise<{ ok: true; svg: string } | { ok: false; error: string }> {
+  /** With an empty / vague subject, User picks a random one he hasn't drawn recently. */
+  async draw(subject: string): Promise<{ ok: true; subject: string; svg: string } | { ok: false; error: string }> {
     try {
-      return { ok: true, svg: await invoke<string>('draw', { subject }) };
+      const r = await invoke<{ subject: string; svg: string }>('draw', { subject });
+      return { ok: true, subject: r.subject, svg: r.svg };
     } catch (e) {
       return { ok: false, error: String(e) };
     }

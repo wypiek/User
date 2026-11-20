@@ -167,10 +167,12 @@ async function handleUserText(raw: string) {
   let subject = marker?.[1]?.trim() ?? '';
   const rest = cleanReply(res.text.replace(/\[DRAW:[^\]]*\]/gi, ''));
   // safety net: "draw me a cat" and he talked instead of drawing (but didn't ask what to draw)
-  if (!subject && DRAW_REQUEST.test(text) && !rest.includes('?')) subject = text;
-  if (subject) {
-    await say(rest !== '...' ? shorten(rest) : "...okay. i'll draw it for you.");
-    return startDrawing(subject);
+  const asked = text.match(DRAW_REQUEST);
+  if (!marker && asked && !rest.includes('?')) subject = asked[1];
+  if (marker || (asked && !rest.includes('?'))) {
+    const random = !subject || /^random$/i.test(subject);
+    await say(rest !== '...' ? shorten(rest) : random ? "...okay. i'll draw you something." : "...okay. i'll draw it for you.");
+    return startDrawing(random ? '' : subject); // '' = he picks something random he hasn't drawn lately
   }
   return say(shorten(cleanReply(res.text)));
 }
@@ -228,9 +230,12 @@ async function say(text: string, { pose = false } = {}) {
 //   "do you want to see it?"  yes -> turn it around + pop-up window -> "do you like it?"
 //                             no  -> throw it up, it explodes
 //   liked -> flattered (and later he offers another one)   disliked -> asks what to improve, remembers
-type Question = 'see' | 'like' | 'why' | 'offer' | 'subject';
+// Unless the person says what to draw, every drawing is a random subject he hasn't drawn lately
+// (picked in the Rust backend, see memory.rs).
+type Question = 'see' | 'like' | 'why' | 'offer';
 const painter = new Painter(1);
-const DRAW_REQUEST = /\b(draw|sketch|paint|doodle)\b\s+(me\s+|us\s+)?(a|an|the|some|my|your|this|that|him|her|it)?\s*\w+/i;
+// "can you draw me a cat under the moon?" -> "a cat under the moon" ("draw something" -> "something")
+const DRAW_REQUEST = /\b(?:draw|sketch|paint|doodle)\s+(?:me\s+|us\s+|for\s+me\s+)?([^.?!]+)/i;
 let drawingActive = false; // he's holding the notebook: the flow drives his animation
 let drawSubject = '';
 let awaiting: Question | null = null;
@@ -254,9 +259,10 @@ function yesNo(text: string): 'yes' | 'no' | null {
   return null;
 }
 
+/** `subject` = what to draw, or '' for something random. */
 async function startDrawing(subject: string) {
   drawingActive = true;
-  drawSubject = subject;
+  drawSubject = subject || 'something';
   awaiting = null;
   mode = 'drawing';
   clearTimeout(idleTimer);
@@ -268,6 +274,7 @@ async function startDrawing(subject: string) {
   const res = await bridge.draw(subject);
   if (!drawingActive) return; // cancelled
   if (!res.ok) return drawingFailed(res.error);
+  drawSubject = res.subject; // what he actually drew (the random pick, if there was one)
   try {
     if (painter.load(res.svg, 12) === 0) return drawingFailed('the page stayed blank.');
   } catch {
@@ -305,12 +312,6 @@ function ask(q: Question, line: string) {
 async function answerDrawingQuestion(text: string): Promise<boolean> {
   const q = awaiting!;
   const yn = yesNo(text);
-  if (q === 'subject') {
-    awaiting = null;
-    const pick = /\b(anything|whatever|you choose|your choice|surprise me|up to you|dunno|don'?t know|you pick)\b/i.test(text);
-    void startDrawing(pick ? 'something you would love to draw for them' : text);
-    return true;
-  }
   if (q === 'why') {
     awaiting = null;
     const note = [dislikedNote, text].filter(Boolean).join(' / ');
@@ -320,7 +321,14 @@ async function answerDrawingQuestion(text: string): Promise<boolean> {
   }
   if (q === 'offer') {
     awaiting = null;
-    if (yn === 'yes') { ask('subject', '...what should i draw?'); return true; }
+    if (yn === 'yes') {
+      // "yes, draw a dragon" -> a dragon; plain "yes" -> something random
+      const named = text
+        .replace(/\b(yes|yeah|yea|yep|yup|ya|sure|ok|okay|alright|please|pls|of course|why not|absolutely|definitely|go ahead|do it|draw|sketch|paint|me|for)\b/gi, ' ')
+        .replace(/[^\p{L}\p{N}' ]+/gu, ' ').trim();
+      void say('...okay.').then(() => startDrawing(named.split(/\s+/).length >= 2 ? named : ''));
+      return true;
+    }
     nextOfferAt = performance.now() + (6 + Math.random() * 6) * 60_000;
     if (yn === 'no') { void say('...okay.'); return true; }
     return false; // not an answer: talk about whatever they said

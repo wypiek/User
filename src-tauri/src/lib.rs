@@ -73,13 +73,25 @@ async fn ask(
         .await
 }
 
-/// Have User make a drawing of `subject`. Returns SVG strokes for the paint program.
+#[derive(serde::Serialize)]
+struct Drawn {
+    subject: String,
+    svg: String,
+}
+
+/// Have User make a drawing. With no real subject ("", "something", "surprise me") he picks
+/// a random one he hasn't drawn recently. Returns what he drew and its SVG strokes.
 #[tauri::command]
-async fn draw(state: State<'_, AppState>, subject: String) -> Result<String, String> {
+async fn draw(state: State<'_, AppState>, subject: String) -> Result<Drawn, String> {
     let settings = state.settings.lock().unwrap().clone();
-    let lessons = memory::drawing_lessons(&memory::load(&state.memory_path));
-    let subject: String = subject.chars().take(400).collect();
-    state.brain.draw(&subject, &lessons, settings).await
+    let mut mem = memory::load(&state.memory_path);
+    let subject: String = subject.trim().chars().take(400).collect();
+    let subject = if memory::is_vague(&subject) { memory::random_subject(&mem) } else { subject };
+    memory::remember_subject(&mut mem, &subject);
+    let _ = memory::save(&state.memory_path, &mem);
+    let lessons = memory::drawing_lessons(&mem);
+    let svg = state.brain.draw(&subject, &lessons, settings).await?;
+    Ok(Drawn { subject, svg })
 }
 
 /// Remember how the person felt about a drawing, so the next ones get better.
