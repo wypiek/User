@@ -5,8 +5,11 @@ A desktop AI companion trapped inside a world. Inspired by the User_2006 Roblox 
 User is a sad, blocky 2006 figure (blue head and arms, black body with blue gears) who stands alone
 at night on the old **Glass Houses** map. Everything looks like a found-footage ARG tape: low resolution,
 scanlines and tracking glitches, with nothing on screen but him and his words. You talk to him with your voice, and he
-answers in the top-left corner in a squished, white pixel font (VT323), like the on-screen text of an old tape. His "voice" is the old sound effects, played back in a
-random order at 1.6x speed.
+answers in the top-left corner in a squished, white pixel font (VT323), like the on-screen text of an old tape. His "voice" is 22 old-game sound effects played back in a
+random order at 1.6x speed. Six are the originals; the other 16 (boing, swoosh, slingshot twang, button click, bloop,
+bell ding, zap, pop, thud, squeak, bonk, rocket, chime and three buzzy "oh / eh / uh" syllables) are synthesized
+from scratch in the same 2006 style by [`scripts/make-sounds.py`](scripts/make-sounds.py). Run
+`python3 scripts/make-sounds.py` (needs numpy and ffmpeg) to regenerate them.
 
 ## Stack
 
@@ -123,14 +126,17 @@ sticks for a few frames before snapping ahead, and every frame has a little jitt
 the app itself renders as fast as your display refreshes (60 fps and up), capped at 240 fps. Press F3 to
 see the actual frame rate.
 
+On top of the keyed poses, every joint has a little **follow-through**: it chases its pose like a damped spring that
+only moves on the 15 fps steps, so moves overshoot slightly and settle, and his head trails his body.
+
 | State | When | What he does |
 | --- | --- | --- |
 | **Summon** | When the app opens | Climbs out of the ground: his hands punch through, his arms slam flat on the ground, he drags himself up in two pulls and steps out (dirt flies, a hole tears open, the camera rumbles). Then he stands hunched, his head snaps up at you, and he reaches out toward you |
-| **Idle** | Nothing is happening | Head hung, breathing, slow slumps. Every few seconds he does something on his own: looks around, glances behind him, sighs, looks at his hands, looks up, stares at you, shifts his weight, scratches his head |
-| **Waiting** | After he answers, and while you hold Left Ctrl | Stares straight at the camera with his head tilted. While you talk, he leans in with a hand by his ear |
-| **Thinking** | While the AI is working on an answer | Hand to his head, swaying, and the gears on his shirt start turning |
-| **Responding** | While he speaks | His head bobs on every sound, and his gestures come from his words: he points at you on "you", puts a hand on his chest on "I", shrugs at a question, shakes his head on "no", hugs himself on "alone" or "dark", and nods on "yes" |
-| **Doing things** | When he opens an app or controls your device | Pumps invisible levers, the gears spin fast and the tape glitches |
+| **Idle** | Nothing is happening | Head hung, weight shifting from hip to hip, slow slumps. Every few seconds he does something on his own: looks around, glances behind him, sighs, looks at his hands, looks up, stares at you, shifts his weight, scratches his head, creeps a few steps toward the camera to stare at you, stretches, shivers, kicks at the dirt, peeks past the camera, or glitches for a few frames |
+| **Waiting** | After he answers, and while you hold Left Ctrl | Stares straight at the camera with his head tilted; sometimes waves, peers, creeps closer, peeks past the camera, shivers or glitches. While you talk, he leans in with a hand by his ear |
+| **Thinking** | While the AI is working on an answer | Hand to his head, swaying, pacing, looking up, tapping his foot, and the gears on his shirt start turning |
+| **Responding** | While he speaks | His head bobs on every sound, and his gestures come from his words, each with a little wind-up: he waves on "hi", points at you on "you", puts a hand on his chest on "I", shrugs at a question, shakes his head on "no", hugs himself on "alone" or "dark", shivers on "cold" or "scared", points up at "sky" or "stars" and down at "ground", spreads his arms on "big" or "everything", holds his hands close on "little", puts a hand to his chin on "maybe" or "think", and nods on "yes" |
+| **Doing things** | When he opens an app or controls your device | Pumps invisible levers, types on an invisible keyboard, turns a crank, slams a big button; the gears spin fast and the tape glitches |
 | **Drawing** | You ask for a drawing | Takes out a notebook and pen, thinks, draws, clicks the pen and puts it away, holds the drawing up, then turns it around, gets flattered or sad, or throws it up so it explodes (see [Drawing](#drawing)) |
 | **Poked** | You click him (any time after he's out of the ground) | The "ouch" sound plays, he's knocked back a step with his arms flung out, catches himself, shakes his head, brushes off his chest with each hand and dusts off his legs, then steps back to his spot |
 
@@ -147,7 +153,8 @@ src/main.ts                 state machine, push to talk, captions, settings UI
 src/scene.ts                Glass Houses at night, the camera on User, VHS post-processing
 src/character.ts            rebuilds the 2006 figure into a rig: sad face, gear shirt, choppy animations
 src/paint.ts                userpaint: traces the AI's drawing by hand onto the notebook page
-src/voice.ts                the sound-effect voice (random order, 1.6x) and the night ambience
+src/voice.ts                the sound-effect voice (22 sounds, random order, 1.6x) and the night ambience
+scripts/make-sounds.py      synthesizes the 16 extra 2006-style voice sounds
 src/stt.ts                  Whisper speech-to-text
 src/bridge.ts               typed wrappers around the Rust commands
 src/styles.css              HUD, captions, settings

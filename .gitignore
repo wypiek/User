@@ -3,3 +3,6 @@ dist/
 src-tauri/target/
 src-tauri/gen/
 .DS_Store
+
+# temporary test pages used for rendering animation reels
+/_*.html
