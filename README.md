@@ -5,7 +5,7 @@ A desktop AI companion trapped inside a world. Inspired by the User_2006 Roblox 
 User is a sad, blocky 2006 figure (blue head and arms, black body with blue gears) who stands alone
 at night on the old **Glass Houses** map. Everything looks like a found-footage ARG tape: low resolution,
 scanlines, tracking glitches and a VCR timestamp stuck in 2006. You talk to him with your voice, and he
-answers in plain white Comic Sans in the top-left corner (Comic Neue is bundled for systems that don't have Comic Sans). His "voice" is the old sound effects, played back in a
+answers in the top-left corner in a squished, white pixel font (VT323), like the on-screen text of an old tape. His "voice" is the old sound effects, played back in a
 random order at 1.6x speed.
 
 ## Stack
