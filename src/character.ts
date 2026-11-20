@@ -552,13 +552,15 @@ const ACTS = {
   pace: C({ len: 3.2, keys: [[0, { legLX: 0, legRX: 0, bodyY: 0, bodyX: 0 }], [0.4, { legLX: -0.35, bodyY: 4, bodyX: -4 }], [0.8, { legLX: 0, bodyY: 0 }], [1.2, { legRX: -0.35, bodyY: 4, bodyX: 4 }], [1.6, { legRX: 0, bodyY: 0 }], [2.0, { legLX: -0.35, bodyY: 4, bodyX: -4 }], [2.4, { legLX: 0, bodyY: 0 }], [2.8, { legRX: -0.35, bodyY: 4, bodyX: 4 }], [3.2, { legRX: 0, bodyY: 0, bodyX: 0 }]] }),
   checkCamera: C({ len: 1.4, keys: [[0, { headX: 0.4, headY: 0 }], [0.1, { headX: -0.05 }], [1.0, {}], [1.1, { headX: 0.4 }]] }),
   // takes a few steps toward the camera, stares at you with his head tilting slowly, backs off
-  creep: C({ len: 5.2, keys: [
+  creep: C({ len: 6.4, keys: [
     [0, { bodyZ: 0, bodyY: 0, legLX: 0, legRX: 0, headX: 0.2, headY: 0, headZ: 0.1, torsoX: 0.04 }],
-    [0.5, { legLX: -0.4, bodyZ: 15, bodyY: 3 }], [0.9, { legLX: 0, bodyZ: 30, bodyY: 0 }],
-    [1.3, { legRX: -0.4, bodyZ: 45, bodyY: 3 }], [1.7, { legRX: 0, bodyZ: 62, bodyY: 0, headX: -0.06, headZ: 0 }],
-    [2.1, { headZ: 0.32 }], [3.3, { headZ: 0.38 }],
-    [3.7, { headZ: 0.1, legRX: 0.3, bodyZ: 46, bodyY: 3 }], [4.1, { legRX: 0, bodyZ: 31, bodyY: 0 }],
-    [4.5, { legLX: 0.3, bodyZ: 15, bodyY: 3 }], [4.9, { legLX: 0, bodyZ: 0, bodyY: 0, headX: 0.2 }],
+    [0.45, { legLX: -0.45, bodyZ: 25, bodyY: 3 }], [0.85, { legLX: 0, bodyZ: 50, bodyY: 0 }],
+    [1.25, { legRX: -0.45, bodyZ: 75, bodyY: 3 }], [1.65, { legRX: 0, bodyZ: 100, bodyY: 0 }],
+    [2.05, { legLX: -0.45, bodyZ: 125, bodyY: 3 }], [2.45, { legLX: 0, bodyZ: 150, bodyY: 0 }],
+    [2.85, { legRX: -0.45, bodyZ: 175, bodyY: 3 }], [3.25, { legRX: 0, bodyZ: 200, bodyY: 0, headX: -0.06, headZ: 0 }],
+    [3.65, { headZ: 0.32 }], [4.6, { headZ: 0.38 }], // stares at you, head tilting slowly
+    [4.9, { headZ: 0.1, legRX: 0.35, bodyZ: 150, bodyY: 3 }], [5.25, { legRX: 0, bodyZ: 100, bodyY: 0 }],
+    [5.6, { legLX: 0.35, bodyZ: 50, bodyY: 3 }], [5.95, { legLX: 0, bodyZ: 0, bodyY: 0, headX: 0.2 }],
   ] }),
   stretch: C({ len: 3.4, keys: [
     [0, { armLX: 0, armRX: 0, armLZ: 0.06, armRZ: -0.06, torsoX: 0.04, torsoZ: 0, headX: 0.2, bodyY: 0 }],
@@ -580,9 +582,13 @@ const ACTS = {
     ...glitchKeys(0.1, 7, 4.2),
     [0.75, { headX: 0.2, headY: 0, headZ: 0.1, armLX: 0, armRX: 0, torsoZ: 0 }],
   ] }),
-  kickDirt: C({ len: 2.2, keys: [
-    [0, { legRX: 0, headX: 0.2, torsoX: 0.04 }], [0.3, { headX: 0.55, legRX: 0.3 }], [0.5, { legRX: -0.5, torsoX: -0.05 }],
-    [0.7, { legRX: 0.1 }], [0.95, { legRX: -0.45 }], [1.2, { legRX: 0, torsoX: 0.04 }], [1.6, { headX: 0.4 }], [2.2, { headX: 0.2 }],
+  kickDirt: C({ len: 2.3, keys: [
+    [0, { legRX: 0, legRZ: 0, torsoZ: 0, bodyX: 0, headX: 0.2, torsoX: 0.04 }],
+    [0.3, { headX: 0.55, legRX: 0.35, legRZ: 0.05, bodyX: 6 }], // wind up
+    [0.5, { legRX: -0.7, legRZ: -0.35, torsoZ: 0.12, torsoX: -0.05 }], // kick out to the side
+    [0.7, { legRX: 0.15, legRZ: -0.05, torsoZ: 0.02 }],
+    [0.95, { legRX: -0.6, legRZ: -0.3, torsoZ: 0.1 }],
+    [1.25, { legRX: 0, legRZ: 0, torsoZ: 0, bodyX: 0, torsoX: 0.04 }], [1.7, { headX: 0.4 }], [2.3, { headX: 0.2 }],
   ] }),
   // leans to one side to look past the camera, then the other
   peekAround: C({ len: 3.2, keys: [
@@ -608,6 +614,8 @@ const ACTS = {
   bigPress: C({ len: 1.2, keys: [[0, { armRX: -1.7, torsoX: 0.16, bodyY: 0 }], [0.3, { armRX: -2.6, torsoX: 0.02 }], [0.5, {}], [0.62, { armRX: -1.2, torsoX: 0.3, bodyY: -6 }], [1.0, {}], [1.2, { armRX: -1.7, torsoX: 0.16, bodyY: 0 }]] }),
 };
 type ActName = keyof typeof ACTS;
+/** Acts that must snap from frame to frame (no follow-through smoothing). */
+const SNAPPY = new Set<Compiled>([ACTS.glitchTwitch]);
 const STATE_ACTS: Partial<Record<AnimState | 'listening', { acts: ActName[]; every: [number, number] }>> = {
   idle: {
     acts: ['lookAround', 'glanceBehind', 'sigh', 'lookAtHands', 'lookUp', 'stare', 'weightShift', 'scratchHead',
@@ -786,6 +794,7 @@ class PaperBurst {
 }
 interface Playing { clip: Compiled; start: number; fadeIn?: number }
 
+
 export class Character {
   state: AnimState = 'idle';
   readonly ctx: AnimCtx = { listening: false };
@@ -957,7 +966,8 @@ export class Character {
     this.pose = p;
 
     // ---- follow-through springs (advance once per animation frame that passed)
-    const steps = this.springStep < 0 ? 0 : Math.min(4, step - this.springStep);
+    const snap = this.action !== null && SNAPPY.has(this.action.clip);
+    const steps = this.springStep < 0 || snap ? 0 : Math.min(4, step - this.springStep);
     this.springStep = step;
     const q: Pose = { ...p };
     for (const [keys, k, d] of SPRINGS) {
