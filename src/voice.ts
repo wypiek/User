@@ -1,12 +1,7 @@
 // User's "voice": he speaks by playing the old sound effects one after another,
 // in random order, at 1.6x speed. Each sound reveals the next few words.
 
-// the six original sounds + 16 more synthesized in the same 2006 style (scripts/make-sounds.py)
-export const VOICE_FILES = [
-  'press', 'ball', 'ouch', 'splat', 'pinball', 'glass',
-  'boing', 'swoosh', 'twang', 'click', 'bloop', 'ding', 'zap', 'pop', 'thud', 'squeak', 'bonk', 'rocket', 'chime',
-  'oh', 'eh', 'uh',
-] as const;
+export const VOICE_FILES = ['press', 'ball', 'ouch', 'splat', 'pinball', 'glass'] as const;
 export type SoundName = (typeof VOICE_FILES)[number];
 const RATE = 1.6;
 

@@ -528,6 +528,7 @@ const form = {
   deviceControl: $<HTMLInputElement>('deviceControl'), confirmCommands: $<HTMLInputElement>('confirmCommands'),
   voiceVolume: $<HTMLInputElement>('voiceVolume'), ambienceVolume: $<HTMLInputElement>('ambienceVolume'),
   sttModel: $<HTMLSelectElement>('sttModel'),
+  micDevice: $<HTMLSelectElement>('micDevice'),
 };
 type FormKey = keyof typeof form;
 
@@ -539,7 +540,22 @@ function syncProviderFieldsets() {
 }
 
 let modelsLoaded = false;
+/** Fill the microphone menu with this computer's input devices (re-read every time, in case one was plugged in). */
+async function refreshMics() {
+  const select = form.micDevice;
+  const saved = settings.micDevice ?? '';
+  let names: string[] = [];
+  try { names = await bridge.listMics(); } catch (e) { console.error('could not list microphones', e); }
+  const opts = [new Option('System default', '')];
+  for (const n of names) opts.push(new Option(n, n));
+  // keep a saved device that's unplugged right now, so the choice isn't lost
+  if (saved && !names.includes(saved)) opts.push(new Option(`${saved} (not connected)`, saved));
+  select.replaceChildren(...opts);
+  select.value = saved;
+}
+
 function openSettings() {
+  void refreshMics();
   for (const [k, el] of Object.entries(form) as [FormKey, HTMLInputElement | HTMLSelectElement][]) {
     if (el instanceof HTMLInputElement && el.type === 'checkbox') el.checked = !!settings[k];
     else el.value = String(settings[k] ?? '');

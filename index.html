@@ -51,6 +51,9 @@
         <h3>Sound</h3>
         <label>Voice <input id="voiceVolume" type="range" min="0" max="1" step="0.05"></label>
         <label>Ambience <input id="ambienceVolume" type="range" min="0" max="1" step="0.05"></label>
+        <label>Microphone
+          <select id="micDevice"><option value="">System default</option></select>
+        </label>
         <label>Speech model
           <select id="sttModel">
             <option value="onnx-community/whisper-tiny.en">Whisper tiny</option>

@@ -20,7 +20,9 @@ pub struct Mic {
 }
 
 impl Mic {
-    pub fn start(&self) -> Result<(), String> {
+    /// Start recording from the input device called `device` ("" = the system default).
+    pub fn start(&self, device: &str) -> Result<(), String> {
+        let device = device.to_string();
         let mut cur = self.current.lock().unwrap();
         if let Some(old) = cur.take() {
             let _ = old.stop_tx.send(());
@@ -32,7 +34,7 @@ impl Mic {
         // cpal streams aren't Send on every platform, so each recording owns a thread.
         thread::spawn(move || {
             let buf = Arc::new(Mutex::new(Vec::<f32>::with_capacity(16_000 * 30)));
-            let (stream, rate) = match open_stream(buf.clone()) {
+            let (stream, rate) = match open_stream(buf.clone(), &device) {
                 Ok(v) => v,
                 Err(e) => {
                     let _ = ready_tx.send(Err(e));
@@ -70,11 +72,33 @@ impl Mic {
     }
 }
 
-fn open_stream(buf: Arc<Mutex<Vec<f32>>>) -> Result<(cpal::Stream, u32), String> {
+/// Names of the microphones / input devices this computer has (for the settings menu).
+pub fn input_devices() -> Vec<String> {
     let host = cpal::default_host();
-    let device = host
-        .default_input_device()
-        .ok_or("no microphone found")?;
+    let mut names: Vec<String> = host
+        .input_devices()
+        .map(|it| it.filter_map(|d| d.name().ok()).collect())
+        .unwrap_or_default();
+    names.dedup();
+    names
+}
+
+/// The device called `name`, or the system default if it's empty or no longer plugged in.
+fn pick_device(name: &str) -> Option<cpal::Device> {
+    let host = cpal::default_host();
+    if !name.is_empty() {
+        if let Ok(mut devices) = host.input_devices() {
+            if let Some(d) = devices.find(|d| d.name().map(|n| n == name).unwrap_or(false)) {
+                return Some(d);
+            }
+        }
+        eprintln!("microphone \"{name}\" not found, using the default one");
+    }
+    host.default_input_device()
+}
+
+fn open_stream(buf: Arc<Mutex<Vec<f32>>>, device_name: &str) -> Result<(cpal::Stream, u32), String> {
+    let device = pick_device(device_name).ok_or("no microphone found")?;
     let config = device.default_input_config().map_err(|e| e.to_string())?;
     let rate = config.sample_rate().0;
     let channels = config.channels() as usize;
@@ -135,3 +159,26 @@ fn resample(input: &[f32], from: u32, to: u32) -> Vec<f32> {
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Needs real audio devices, so it only runs when asked: `cargo test -- --ignored mic`
+    #[test]
+    #[ignore]
+    fn records_from_a_chosen_device_and_falls_back_to_the_default() {
+        let names = input_devices();
+        println!("input devices: {names:?}");
+        assert!(!names.is_empty(), "no input devices on this machine");
+        let mic = Mic::default();
+        for name in [names[names.len() - 1].as_str(), "no such microphone", ""] {
+            mic.start(name).unwrap_or_else(|e| panic!("start({name:?}) failed: {e}"));
+            std::thread::sleep(std::time::Duration::from_millis(1500));
+            let pcm = mic.stop().expect("stop");
+            println!("{name:?}: {} samples at 16 kHz", pcm.len());
+            assert!(pcm.len() > 3000, "recorded too little from {name:?}");
+        }
+    }
+}
+

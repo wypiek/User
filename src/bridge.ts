@@ -10,6 +10,8 @@ export interface Settings {
   deviceControl: boolean;
   confirmCommands: boolean;
   sttModel: string;
+  /** push-to-talk microphone; '' = the system default */
+  micDevice: string;
   voiceVolume: number;
   ambienceVolume: number;
   setupDone: boolean;
@@ -77,6 +79,8 @@ export const bridge = {
   reset: () => invoke<void>('reset'),
   listModels: () => invoke<string[]>('list_models'),
 
+  /** The microphones / input devices on this computer. */
+  listMics: () => invoke<string[]>('list_mics'),
   micStart: () => invoke<void>('mic_start'),
   async micStop(): Promise<Float32Array> {
     const buf = await invoke<ArrayBuffer>('mic_stop');

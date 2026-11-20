@@ -2,6 +2,7 @@
 
 mod ai;
 mod device;
+mod locate;
 mod memory;
 mod mic;
 mod settings;
@@ -164,7 +165,14 @@ async fn list_models() -> Vec<String> {
 
 #[tauri::command]
 fn mic_start(state: State<'_, AppState>) -> Result<(), String> {
-    state.mic.start()
+    let device = state.settings.lock().unwrap().mic_device.clone();
+    state.mic.start(&device)
+}
+
+/// The microphones / input devices on this computer, for the settings menu.
+#[tauri::command]
+fn list_mics() -> Vec<String> {
+    mic::input_devices()
 }
 
 /// Returns raw little-endian f32 samples (16 kHz mono) as an ArrayBuffer.
@@ -203,7 +211,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_settings, set_settings, ask, cancel, reset, list_models, mic_start, mic_stop, mic_cancel,
-            draw, drawing_feedback, save_drawing
+            draw, drawing_feedback, save_drawing, list_mics
         ])
         .run(tauri::generate_context!())
         .expect("error while running User");
