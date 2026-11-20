@@ -40,6 +40,7 @@ The first time you open it, the settings panel (`F1`) asks what should power him
 | **Enter** | Type to him instead of talking. |
 | **Esc** | Make him stop talking, or cancel what he's doing. |
 | **F1** | Settings. |
+| **F3** | Show the frame rate and draw calls. |
 
 Push to talk only works while the User window is focused.
 
@@ -68,8 +69,9 @@ offline. You can switch to `tiny` (faster) or `small` (more accurate) in setting
 
 ## Animations
 
-All of them are stop-motion on purpose. Poses snap at 5–10 fps, frames are sometimes dropped, and he
-twitches.
+All of them run at 15 fps but stay choppy on purpose: frames are sometimes dropped, a pose sometimes
+sticks for a few frames before snapping ahead, and every frame has a little jitter. The scene renders at
+30 fps, so each pose lasts exactly two frames.
 
 | State | When | What he does |
 | --- | --- | --- |

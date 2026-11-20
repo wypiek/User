@@ -105,7 +105,8 @@ function startLoop() {
   const t0 = performance.now();
   let last = t0;
   let acc = 0;
-  const FRAME = 1 / 24; // it's a tape. 24 fps.
+  // 30 fps: an even multiple of his 15 fps animation, so every pose lasts exactly 2 frames
+  const FRAME = 1 / 30;
   const frame = (now: number) => {
     requestAnimationFrame(frame);
     const dt = Math.min(0.1, (now - last) / 1000);
@@ -119,11 +120,19 @@ function startLoop() {
     if (acc < FRAME) return;
     acc %= FRAME;
     world.render((now - t0) / 1000);
+    fpsFrames++;
   };
   requestAnimationFrame(frame);
   setInterval(updateOSD, 250);
+  setInterval(() => {
+    if (showFps) $('fps').textContent = `${fpsFrames} fps · ${world.renderer.info.render.calls} draw calls`;
+    fpsFrames = 0;
+  }, 1000);
   updateOSD();
 }
+
+let fpsFrames = 0;
+let showFps = false;
 
 const started = Date.now();
 function updateOSD() {
@@ -177,7 +186,7 @@ async function handleUserText(raw: string) {
   ui.doing.textContent = '';
   if (mode !== 'thinking' && mode !== 'doing') return; // cancelled
   if (!res.ok) return say(`...something is wrong. ${res.error}`);
-  return say(cleanReply(res.text));
+  return say(shorten(cleanReply(res.text)));
 }
 
 function cleanReply(t: string): string {
@@ -189,6 +198,21 @@ function cleanReply(t: string): string {
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
     .replace(/\s+/g, ' ')
     .trim() || '...';
+}
+
+/** Hard limit on how much he says: at most 2 sentences / 30 words, cut at a sentence end. */
+function shorten(text: string, maxWords = 30, maxSentences = 2): string {
+  // split after a single . ! or ? — his trailing "..." pauses don't end a sentence
+  const sentences = text.split(/(?<=(?:^|[^.])[.!?])\s+/).map((x) => x.trim()).filter(Boolean);
+  if (!sentences.length) return text;
+  let out = '';
+  for (const sentence of sentences.slice(0, maxSentences)) {
+    const next = out ? `${out} ${sentence}` : sentence;
+    if (next.split(/\s+/).length > maxWords) break;
+    out = next;
+  }
+  if (!out) out = sentences[0].split(/\s+/).slice(0, maxWords).join(' ') + '...';
+  return out;
 }
 
 const escapeHtml = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -261,6 +285,7 @@ window.addEventListener('keydown', (e) => {
   voice?.resume();
   if (!ui.settings.hidden) { if (e.key === 'Escape') closeSettings(); return; }
   if (e.key === 'F1') { e.preventDefault(); openSettings(); return; }
+  if (e.key === 'F3') { e.preventDefault(); showFps = !showFps; $('fps').textContent = ''; return; }
   if (!user) return;
   const typing = document.activeElement === ui.typebox;
   if (e.code === 'ControlLeft') {

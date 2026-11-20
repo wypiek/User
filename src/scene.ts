@@ -6,7 +6,58 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { Character } from './character';
+
+/**
+ * The OBJ map is ~2,500 separate parts. Drawing them one by one costs ~2,500 draw calls a
+ * frame, which stutters on weak GPUs. Bake them into one mesh per material instead (~30).
+ */
+function mergeByMaterial(src: THREE.Group): THREE.Group {
+  src.updateMatrixWorld(true);
+  const buckets = new Map<string, { mat: THREE.MeshPhongMaterial; geos: THREE.BufferGeometry[] }>();
+  src.traverse((o) => {
+    if (!(o instanceof THREE.Mesh)) return;
+    const geo = (o.geometry as THREE.BufferGeometry).index ? (o.geometry as THREE.BufferGeometry).toNonIndexed() : (o.geometry as THREE.BufferGeometry);
+    const mats = (Array.isArray(o.material) ? o.material : [o.material]) as THREE.MeshPhongMaterial[];
+    const total = geo.attributes.position.count;
+    const ranges = geo.groups.length ? geo.groups : [{ start: 0, count: total, materialIndex: 0 }];
+    for (const r of ranges) {
+      const mat = mats[r.materialIndex ?? 0] ?? mats[0];
+      const count = Math.min(r.count, total - r.start);
+      if (count <= 0) continue;
+      const part = new THREE.BufferGeometry();
+      const slice = (name: string) => {
+        const a = geo.getAttribute(name) as THREE.BufferAttribute | undefined;
+        if (!a) return null;
+        return new THREE.BufferAttribute((a.array as Float32Array).slice(r.start * a.itemSize, (r.start + count) * a.itemSize), a.itemSize);
+      };
+      part.setAttribute('position', slice('position')!);
+      const normal = slice('normal');
+      if (normal) part.setAttribute('normal', normal); else part.computeVertexNormals();
+      // every geometry in a merge needs the same attributes: uv only where there's a texture
+      if (mat.map) part.setAttribute('uv', slice('uv') ?? new THREE.BufferAttribute(new Float32Array(count * 2), 2));
+      part.applyMatrix4(o.matrixWorld);
+      const key = mat.name || mat.uuid;
+      if (!buckets.has(key)) buckets.set(key, { mat, geos: [] });
+      buckets.get(key)!.geos.push(part);
+    }
+  });
+  const out = new THREE.Group();
+  for (const { mat, geos } of buckets.values()) {
+    const merged = mergeGeometries(geos, false);
+    if (!merged) continue;
+    const transparent = mat.transparent || mat.opacity < 1;
+    const mesh = new THREE.Mesh(merged, new THREE.MeshLambertMaterial({
+      color: mat.color, map: mat.map ?? null, transparent, opacity: mat.opacity,
+      side: THREE.DoubleSide, depthWrite: !transparent,
+    }));
+    mesh.receiveShadow = true;
+    mesh.matrixAutoUpdate = false;
+    out.add(mesh);
+  }
+  return out;
+}
 
 // Where User stands: out on the grass of Glass Houses, the houses glowing behind him (studs).
 export const SPOT = new THREE.Vector3(-3.7, 84, -201);
@@ -101,6 +152,7 @@ export class World {
   readonly camera = new THREE.PerspectiveCamera(42, 16 / 9, 0.1, 900);
   readonly ambient = new THREE.AmbientLight(0x0b1fb8, 5.0); // night: a strong, dark-blue ambience
   glitch = 0;
+  mapDrawCalls = 0;
   spot = SPOT.clone();
   private camDir = CAMERA_DIR.clone();
   private camBase = new THREE.Vector3();
@@ -115,6 +167,7 @@ export class World {
   constructor(private canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.info.autoReset = false; // count every pass of a frame (F3 counter)
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
 
@@ -158,20 +211,9 @@ export class World {
     const materials = await new MTLLoader().setPath(dir).loadAsync(mtl);
     materials.preload();
     const loader = new OBJLoader().setMaterials(materials);
-    const group = await new Promise<THREE.Group>((res, rej) => loader.load(dir + obj, res, onProgress, rej));
-    group.traverse((o) => {
-      if (!(o instanceof THREE.Mesh)) return;
-      o.receiveShadow = true;
-      const mats = (Array.isArray(o.material) ? o.material : [o.material]) as THREE.MeshPhongMaterial[];
-      const lambert = mats.map((m) => {
-        const transparent = m.transparent || m.opacity < 1;
-        return new THREE.MeshLambertMaterial({
-          color: m.color, map: m.map ?? null, transparent, opacity: m.opacity,
-          side: THREE.DoubleSide, depthWrite: !transparent,
-        });
-      });
-      o.material = lambert.length === 1 ? lambert[0] : lambert;
-    });
+    const raw = await new Promise<THREE.Group>((res, rej) => loader.load(dir + obj, res, onProgress, rej));
+    const group = mergeByMaterial(raw);
+    this.mapDrawCalls = group.children.length;
     this.scene.add(group);
     this.moonSprite = makeMoon();
     this.scene.add(this.moonSprite);
@@ -214,6 +256,7 @@ export class World {
       this.camera.position.copy(this.camBase).add(new THREE.Vector3(r(1) * 0.05, r(2) * 0.05, r(3) * 0.03));
       this.camera.lookAt(this.lookAt);
     }
+    this.renderer.info.reset();
     this.vhs.uniforms.time.value = time;
     this.vhs.uniforms.glitch.value = this.glitch;
     this.composer.render();

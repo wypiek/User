@@ -47,6 +47,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color:
 }
 #typebox.open { display: block; }
 
+#fps { position: fixed; left: 16px; top: 12px; font-size: 11px; color: var(--dim); pointer-events: none; z-index: 40; }
+
 #gear {
   position: fixed; right: 16px; top: 12px; background: none; border: 0; padding: 4px;
   color: var(--text); opacity: 0.2; font: 12px var(--ui); cursor: pointer;

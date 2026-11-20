@@ -10,5 +10,6 @@ export default defineConfig({
     outDir: 'dist',
     chunkSizeWarningLimit: 4000,
   },
+  worker: { format: 'es' },
   optimizeDeps: { exclude: ['@huggingface/transformers'] },
 });

@@ -1,50 +1,60 @@
 // Local, offline-after-first-download speech recognition (Whisper via transformers.js).
-// The microphone itself is captured natively by Rust (cpal) and handed over as 16 kHz PCM.
-// Works the same no matter which AI backend powers User, and needs no API key.
-import { pipeline, env } from '@huggingface/transformers';
+// The microphone is captured natively by Rust (cpal) and handed over as 16 kHz PCM;
+// Whisper itself runs in a Web Worker (stt.worker.ts) so it never blocks rendering.
 
-type Transcriber = (audio: Float32Array, opts?: Record<string, unknown>) => Promise<{ text?: string } | { text?: string }[]>;
 type Progress = (p: { status: string; file?: string; progress?: number }) => void;
+type Reply = { id: number; ok: boolean; text?: string; error?: string };
 
-env.allowLocalModels = false;
-env.useBrowserCache = true;
-const wasm = env.backends.onnx.wasm!;
-wasm.proxy = true; // run inference off the render thread
+let worker: Worker | null = null;
+let nextId = 1;
+const pending = new Map<number, (r: Reply) => void>();
+let onProgress: Progress | undefined;
+let loaded: Promise<void> | null = null;
+let loadedModel = '';
 
-let transcriberPromise: Promise<Transcriber> | null = null;
-let currentModel: string | null = null;
+function getWorker(): Worker {
+  if (worker) return worker;
+  worker = new Worker(new URL('./stt.worker.ts', import.meta.url), { type: 'module' });
+  worker.onmessage = (e: MessageEvent) => {
+    const d = e.data;
+    if (d.type === 'progress') return onProgress?.({ status: 'progress', file: d.file, progress: d.progress });
+    pending.get(d.id)?.(d as Reply);
+    pending.delete(d.id);
+  };
+  worker.onerror = (e) => {
+    for (const resolve of pending.values()) resolve({ id: 0, ok: false, error: e.message || 'speech worker crashed' });
+    pending.clear();
+    worker?.terminate();
+    worker = null;
+    loaded = null;
+  };
+  return worker;
+}
 
-export function loadSTT(model = 'onnx-community/whisper-base.en', onProgress?: Progress): Promise<Transcriber> {
-  if (transcriberPromise && currentModel === model) return transcriberPromise;
-  currentModel = model;
-  const make = async () =>
-    (await pipeline('automatic-speech-recognition', model, {
-      dtype: 'q8',
-      device: 'wasm',
-      progress_callback: onProgress as never,
-    })) as unknown as Transcriber;
-  transcriberPromise = make()
-    .catch((err) => {
-      // If the off-thread proxy worker can't start in this webview, run in-page instead.
-      if (!wasm.proxy) throw err;
-      console.warn('ASR proxy worker failed, retrying in-page', err);
-      wasm.proxy = false;
-      return make();
-    })
-    .catch((err) => {
-      transcriberPromise = null;
-      throw err;
-    });
-  return transcriberPromise;
+function call(msg: Record<string, unknown>, transfer: Transferable[] = []): Promise<Reply> {
+  const id = nextId++;
+  return new Promise((resolve) => {
+    pending.set(id, resolve);
+    getWorker().postMessage({ ...msg, id }, transfer);
+  });
+}
+
+export function loadSTT(model = 'onnx-community/whisper-base.en', progress?: Progress): Promise<void> {
+  if (progress) onProgress = progress;
+  if (loaded && loadedModel === model) return loaded;
+  loadedModel = model;
+  loaded = call({ type: 'load', model }).then((r) => {
+    if (!r.ok) { loaded = null; throw new Error(r.error); }
+  });
+  return loaded;
 }
 
 /** @param pcm mono 16 kHz samples */
-export async function transcribe(pcm: Float32Array, model?: string): Promise<string> {
-  const asr = await loadSTT(model);
+export async function transcribe(pcm: Float32Array, model = loadedModel || 'onnx-community/whisper-base.en'): Promise<string> {
   if (pcm.length < 16000 * 0.25) return '';
-  const out = await asr(pcm, { chunk_length_s: 30, stride_length_s: 5 });
-  const text = Array.isArray(out) ? out.map((o) => o.text ?? '').join(' ') : out.text ?? '';
-  return cleanTranscript(text);
+  const r = await call({ type: 'transcribe', model, pcm }, [pcm.buffer]);
+  if (!r.ok) throw new Error(r.error);
+  return cleanTranscript(r.text ?? '');
 }
 
 function cleanTranscript(t: string): string {

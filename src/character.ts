@@ -5,6 +5,7 @@ import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 
 const BLUE = 0x0000ff;
 const BLACK = 0x050507;
+const ANIM_FPS = 15; // every pose updates at 15 fps; the choppiness comes from holds, drops and jitter
 const UNIT = 0.01; // FBX units -> studs (the figure is ~5 studs tall, like in 2006)
 
 // ---------------------------------------------------------------- textures
@@ -257,7 +258,7 @@ const sq = (x: number) => (Math.sin(x) >= 0 ? 1 : -1);
 const STATES: Record<AnimState, StateDef> = {
   // ~3.4 s: flickers, crawls up out of the floor, then reaches out at you
   summon: {
-    fps: 8, duration: 3.4,
+    fps: ANIM_FPS, duration: 3.4,
     pose(t, n) {
       const p = { ...ZERO };
       const rise = Math.min(1, Math.max(0, (t - 0.35) / 1.5));
@@ -276,7 +277,7 @@ const STATES: Record<AnimState, StateDef> = {
   },
   // breathing, head hung, the occasional twitch
   idle: {
-    fps: 6,
+    fps: ANIM_FPS,
     pose(t, n) {
       const p = { ...ZERO };
       p.torsoX = 0.03 + Math.sin(t * 1.3) * 0.025;
@@ -291,7 +292,7 @@ const STATES: Record<AnimState, StateDef> = {
   },
   // hand to head, staring at the floor, swaying
   thinking: {
-    fps: 5,
+    fps: ANIM_FPS,
     pose(t) {
       const p = { ...ZERO };
       p.armRX = -2.55; p.armRZ = 0.55; p.armRY = 0.3; // right hand up to the side of the head
@@ -305,7 +306,7 @@ const STATES: Record<AnimState, StateDef> = {
   },
   // jerky gestures + a head bob on every syllable (sound)
   responding: {
-    fps: 8,
+    fps: ANIM_FPS,
     pose(t, _n, ctx) {
       const p = { ...ZERO };
       const syl = ctx.syllable; // bumps each time a voice sound starts
@@ -320,7 +321,7 @@ const STATES: Record<AnimState, StateDef> = {
   },
   // looking straight at you, head tilted, swaying in place
   waiting: {
-    fps: 6,
+    fps: ANIM_FPS,
     pose(t, n, ctx) {
       const p = { ...ZERO };
       p.headX = -0.04; p.headZ = 0.24 + sq(t * 0.9) * 0.04;
@@ -335,7 +336,7 @@ const STATES: Record<AnimState, StateDef> = {
   },
   // working invisible levers: both arms out, pumping, head snapping around
   doing: {
-    fps: 10,
+    fps: ANIM_FPS,
     pose(t, n) {
       const p = { ...ZERO };
       p.armLX = -1.45 + sq(t * 13) * 0.35; p.armRX = -1.45 - sq(t * 13) * 0.35;
@@ -388,10 +389,12 @@ export class Character {
     if (step === this.lastStep) return; // hold the frame: this is what makes it choppy
     this.lastStep = step;
     const n = step + this.ctx.syllable * 1000;
-    // occasionally "drop" a frame entirely, like a bad tape
-    if (step > 0 && hash(n + 0.5) > 0.9) return;
+    // choppiness at 15 fps: now and then a frame is dropped, and sometimes the
+    // pose sticks for a few frames before snapping ahead, like a bad tape
+    if (step > 0 && hash(n + 0.5) > 0.88) return;
+    if (step > 0 && step % 4 !== 0 && hash(Math.floor(step / 4) + this.ctx.syllable * 31 + 0.77) > 0.8) return;
     const p = st.pose(step / st.fps, n, this.ctx);
-    const jit = (k: number) => (hash(n * 7 + k) - 0.5) * 0.05;
+    const jit = (k: number) => (hash(n * 7 + k) - 0.5) * 0.06;
 
     const { body, torsoPivot, neck, armL, armR, legL, legR } = this.j;
     body.position.y = p.bodyY;
