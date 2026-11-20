@@ -323,14 +323,33 @@ class Compiled {
 }
 const C = (clip: Clip) => new Compiled(clip);
 
+const FRAME = 1 / 15;
+/** One key per animation frame between `from` and `to`, alternating ±amp on `k` (shivers, trembles). */
+function tremble(from: number, to: number, k: PoseKey, amp: number, base = 0): Key[] {
+  const keys: Key[] = [];
+  for (let t = from, i = 0; t < to; t += FRAME, i++) keys.push([t, { [k]: base + (i % 2 ? -amp : amp) }]);
+  keys.push([to, { [k]: base }]);
+  return keys;
+}
+/** A few frames of random snapping, like the tape glitching on him. */
+function glitchKeys(from: number, frames: number, seed: number): Key[] {
+  const keys: Key[] = [];
+  for (let i = 0; i < frames; i++) {
+    const r = (k: number) => hash(seed + i * 13.7 + k) - 0.5;
+    keys.push([from + i * FRAME, { headX: r(1) * 0.9, headY: r(2) * 1.4, headZ: r(3) * 0.9, armLX: r(4) * 1.6, armRX: r(5) * 1.6, torsoZ: r(6) * 0.3 }]);
+  }
+  return keys;
+}
+
 // ---- base clips (loop) --------------------------------------------------------------
 const BASE = {
-  // standing alone: breathing, head hung, slow slumps
-  idle: C({ len: 6, loop: true, keys: [
-    [0, { headX: 0.24, headZ: 0.08, torsoX: 0.04, armLX: 0.03, armRX: 0.02, armLZ: 0.06, armRZ: -0.06 }],
-    [2.0, { headX: 0.32, headZ: 0.14, torsoX: 0.08, armLX: 0.07, armRX: 0.06, bodyY: -3 }],
-    [3.2, { headX: 0.27, headZ: 0.05 }],
-    [4.6, { headX: 0.2, headZ: 0.12, torsoX: 0.03, bodyY: 0, headY: 0.06 }],
+  // standing alone: weight on one hip, then the other; slow slumps, head drifting
+  idle: C({ len: 8, loop: true, keys: [
+    [0, { headX: 0.24, headY: 0, headZ: 0.08, torsoX: 0.04, torsoZ: -0.03, bodyX: 4, legLZ: 0.05, legRZ: 0, armLX: 0.03, armRX: 0.02, armLZ: 0.08, armRZ: -0.05 }],
+    [2.0, { headX: 0.32, headZ: 0.14, torsoX: 0.08, armLX: 0.07, armRX: 0.06, bodyY: -3, headY: 0.08 }],
+    [3.4, { headX: 0.27, headZ: 0.05, bodyY: 0 }],
+    [4.2, { bodyX: -4, legLZ: 0, legRZ: -0.05, torsoZ: 0.03, headZ: -0.02, headY: -0.06, armLZ: 0.05, armRZ: -0.08 }], // other hip
+    [6.2, { headX: 0.2, headZ: 0, torsoX: 0.03, bodyY: -2 }],
   ] }),
   // staring at you, head tilted, weight shifting from leg to leg
   waiting: C({ len: 5, loop: true, keys: [
@@ -354,12 +373,15 @@ const BASE = {
     [2.6, { armRX: -2.55, headY: 0.18, torsoZ: 0.05, headZ: -0.16, bodyX: 4 }],
     [3.3, { armRX: -2.72 }],
   ] }),
-  // talking: loose arms, small bounce (gestures come from his words, see GESTURES)
-  responding: C({ len: 1.6, loop: true, keys: [
-    [0, { headX: 0.02, headZ: 0.1, armLX: -0.45, armRX: -0.4, armLZ: 0.12, armRZ: -0.12, torsoX: 0.05 }],
-    [0.4, { armLX: -0.6, armRX: -0.3, headZ: 0.16, bodyY: -2 }],
-    [0.8, { armLX: -0.4, armRX: -0.55, headZ: 0.06, bodyY: 0 }],
-    [1.2, { armLX: -0.55, armRX: -0.35, headZ: 0.14 }],
+  // talking: loose arms, torso turning a little toward each hand, an open-handed beat now and then
+  // (on top of this, gestures come from his words, see GESTURES)
+  responding: C({ len: 2.4, loop: true, keys: [
+    [0, { headX: 0.02, headY: 0, headZ: 0.1, armLX: -0.45, armRX: -0.4, armLZ: 0.12, armRZ: -0.12, torsoX: 0.05, torsoY: 0, bodyY: 0 }],
+    [0.4, { armLX: -0.65, armRX: -0.3, headZ: 0.16, torsoY: 0.08, bodyY: -2 }],
+    [0.8, { armLX: -0.4, armRX: -0.6, headZ: 0.06, torsoY: -0.06, bodyY: 0, headY: 0.06 }],
+    [1.2, { armLX: -0.55, armRX: -0.35, headZ: 0.14, torsoY: 0.04, headY: -0.04 }],
+    [1.6, { armLX: -0.75, armRX: -0.7, armLZ: 0.25, armRZ: -0.25, torsoX: 0.09, bodyY: -3 }], // both hands open
+    [2.0, { armLX: -0.45, armRX: -0.45, armLZ: 0.12, armRZ: -0.12, torsoX: 0.05, torsoY: 0, bodyY: 0 }],
   ] }),
   // working invisible levers: fast thrust, hold, swap
   doing: C({ len: 0.8, loop: true, keys: [
@@ -496,6 +518,16 @@ const DRAW = {
   ] }),
 };
 const TOSS_EXPLODE_AT = 0.7;
+
+// ---- follow-through: each joint chases its keyed pose like a damped spring, stepped at
+// 15 fps (so it stays choppy) - it overshoots a touch and settles over a few frames, and
+// the head trails the body. [stiffness, damping] per animation frame.
+const SPRINGS: [PoseKey[], number, number][] = [
+  [['headX', 'headY', 'headZ'], 0.35, 0.65],
+  [['torsoX', 'torsoY', 'torsoZ'], 0.55, 0.7],
+  [['armLX', 'armLY', 'armLZ', 'armRX', 'armRY', 'armRZ'], 0.5, 0.68],
+  [['legLX', 'legLZ', 'legRX', 'legRZ'], 0.65, 0.72],
+];
 /** One-shot states and what comes after them. */
 const NEXT: Partial<Record<AnimState, AnimState>> = {
   summon: 'idle', drawPrep: 'drawPonder', drawDone: 'drawHold', drawReveal: 'drawShow',
@@ -519,14 +551,72 @@ const ACTS = {
   thinkLookUp: C({ len: 2.6, keys: [[0, { headX: 0.32, headY: 0.1 }], [0.4, { headX: -0.45, headY: 0.35 }], [2, {}], [2.6, { headX: 0.32, headY: 0.1 }]] }),
   pace: C({ len: 3.2, keys: [[0, { legLX: 0, legRX: 0, bodyY: 0, bodyX: 0 }], [0.4, { legLX: -0.35, bodyY: 4, bodyX: -4 }], [0.8, { legLX: 0, bodyY: 0 }], [1.2, { legRX: -0.35, bodyY: 4, bodyX: 4 }], [1.6, { legRX: 0, bodyY: 0 }], [2.0, { legLX: -0.35, bodyY: 4, bodyX: -4 }], [2.4, { legLX: 0, bodyY: 0 }], [2.8, { legRX: -0.35, bodyY: 4, bodyX: 4 }], [3.2, { legRX: 0, bodyY: 0, bodyX: 0 }]] }),
   checkCamera: C({ len: 1.4, keys: [[0, { headX: 0.4, headY: 0 }], [0.1, { headX: -0.05 }], [1.0, {}], [1.1, { headX: 0.4 }]] }),
+  // takes a few steps toward the camera, stares at you with his head tilting slowly, backs off
+  creep: C({ len: 5.2, keys: [
+    [0, { bodyZ: 0, bodyY: 0, legLX: 0, legRX: 0, headX: 0.2, headY: 0, headZ: 0.1, torsoX: 0.04 }],
+    [0.5, { legLX: -0.4, bodyZ: 15, bodyY: 3 }], [0.9, { legLX: 0, bodyZ: 30, bodyY: 0 }],
+    [1.3, { legRX: -0.4, bodyZ: 45, bodyY: 3 }], [1.7, { legRX: 0, bodyZ: 62, bodyY: 0, headX: -0.06, headZ: 0 }],
+    [2.1, { headZ: 0.32 }], [3.3, { headZ: 0.38 }],
+    [3.7, { headZ: 0.1, legRX: 0.3, bodyZ: 46, bodyY: 3 }], [4.1, { legRX: 0, bodyZ: 31, bodyY: 0 }],
+    [4.5, { legLX: 0.3, bodyZ: 15, bodyY: 3 }], [4.9, { legLX: 0, bodyZ: 0, bodyY: 0, headX: 0.2 }],
+  ] }),
+  stretch: C({ len: 3.4, keys: [
+    [0, { armLX: 0, armRX: 0, armLZ: 0.06, armRZ: -0.06, torsoX: 0.04, torsoZ: 0, headX: 0.2, bodyY: 0 }],
+    [0.25, { armLX: 0.25, armRX: 0.25, bodyY: -3 }], // dips first
+    [0.6, { armLX: -2.9, armRX: -2.9, armLZ: -0.15, armRZ: 0.15, torsoX: -0.12, headX: -0.35, bodyY: 6 }],
+    [1.4, { armLZ: 0.2, armRZ: -0.2, torsoZ: 0.1 }], [1.9, { torsoZ: -0.1 }], [2.4, { torsoZ: 0 }],
+    [3.0, { armLX: 0, armRX: 0, armLZ: 0.06, armRZ: -0.06, torsoX: 0.04, headX: 0.2, bodyY: 0 }],
+  ] }),
+  // hugs himself and shivers
+  shiver: C({ len: 2.6, keys: [
+    [0, { armLX: 0, armRX: 0, armLZ: 0.06, armRZ: -0.06, torsoX: 0.04, headX: 0.2, bodyX: 0 }],
+    [0.3, { armLX: -1.15, armRX: -1.1, armLZ: -0.85, armRZ: 0.85, headX: 0.4, torsoX: 0.12 }],
+    ...tremble(0.4, 2.0, 'bodyX', 3),
+    [2.6, { armLX: 0, armRX: 0, armLZ: 0.06, armRZ: -0.06, torsoX: 0.04, headX: 0.2 }],
+  ] }),
+  // the tape catches on him: a few frames of random snapping, then he's still again
+  glitchTwitch: C({ len: 1.2, keys: [
+    [0, { headX: 0.2, headY: 0, headZ: 0.1, armLX: 0, armRX: 0, torsoZ: 0 }],
+    ...glitchKeys(0.1, 7, 4.2),
+    [0.75, { headX: 0.2, headY: 0, headZ: 0.1, armLX: 0, armRX: 0, torsoZ: 0 }],
+  ] }),
+  kickDirt: C({ len: 2.2, keys: [
+    [0, { legRX: 0, headX: 0.2, torsoX: 0.04 }], [0.3, { headX: 0.55, legRX: 0.3 }], [0.5, { legRX: -0.5, torsoX: -0.05 }],
+    [0.7, { legRX: 0.1 }], [0.95, { legRX: -0.45 }], [1.2, { legRX: 0, torsoX: 0.04 }], [1.6, { headX: 0.4 }], [2.2, { headX: 0.2 }],
+  ] }),
+  // leans to one side to look past the camera, then the other
+  peekAround: C({ len: 3.2, keys: [
+    [0, { torsoZ: 0, bodyX: 0, headZ: 0.1, headY: 0, legLZ: 0, legRZ: 0 }],
+    [0.5, { torsoZ: 0.3, bodyX: -12, headZ: -0.25, headY: 0.2, legLZ: 0.1 }], [1.6, {}],
+    [1.9, { torsoZ: -0.25, bodyX: 10, headZ: 0.3, headY: -0.2, legLZ: 0, legRZ: -0.1 }], [2.7, {}],
+    [3.2, { torsoZ: 0, bodyX: 0, headZ: 0.1, headY: 0, legRZ: 0 }],
+  ] }),
+  tapFoot: C({ len: 2.0, keys: [[0, { legRX: 0, bodyY: 0 }], ...[0.2, 0.5, 0.8, 1.1, 1.4].flatMap((t): Key[] => [[t, { legRX: -0.2, bodyY: 1 }], [t + 0.13, { legRX: 0, bodyY: 0 }]])] }),
+  // typing on an invisible keyboard
+  typing: C({ len: 2.0, keys: [
+    [0, { armLX: -1.2, armRX: -1.2, armLZ: -0.25, armRZ: 0.25, headX: 0.45, torsoX: 0.15 }],
+    ...Array.from({ length: 16 }, (_, i): Key => [0.1 + i * 0.1, { armLX: i % 2 ? -1.32 : -1.16, armRX: i % 2 ? -1.16 : -1.32, armLZ: -0.25 + (hash(i) - 0.5) * 0.12 }]),
+  ] }),
+  // turning a crank with his right hand
+  crank: C({ len: 2.4, keys: [
+    [0, { armLX: -0.9, armLZ: 0.2, armRX: -1.4, armRZ: 0.25, headX: 0.35, torsoX: 0.12, torsoY: 0 }],
+    ...Array.from({ length: 14 }, (_, i): Key => {
+      const a = (i / 7) * Math.PI * 2;
+      return [0.15 + i * 0.15, { armRX: -1.4 + Math.cos(a) * 0.35, armRZ: 0.25 + Math.sin(a) * 0.3, torsoY: Math.sin(a) * 0.06 }];
+    }),
+  ] }),
   bigPress: C({ len: 1.2, keys: [[0, { armRX: -1.7, torsoX: 0.16, bodyY: 0 }], [0.3, { armRX: -2.6, torsoX: 0.02 }], [0.5, {}], [0.62, { armRX: -1.2, torsoX: 0.3, bodyY: -6 }], [1.0, {}], [1.2, { armRX: -1.7, torsoX: 0.16, bodyY: 0 }]] }),
 };
 type ActName = keyof typeof ACTS;
 const STATE_ACTS: Partial<Record<AnimState | 'listening', { acts: ActName[]; every: [number, number] }>> = {
-  idle: { acts: ['lookAround', 'glanceBehind', 'sigh', 'lookAtHands', 'lookUp', 'stare', 'weightShift', 'scratchHead'], every: [2.5, 6] },
-  waiting: { acts: ['stare', 'wave', 'peer', 'tiltOther', 'weightShift'], every: [3, 7] },
-  thinking: { acts: ['thinkLookUp', 'pace'], every: [2, 4.5] },
-  doing: { acts: ['checkCamera', 'bigPress'], every: [1.2, 2.8] },
+  idle: {
+    acts: ['lookAround', 'glanceBehind', 'sigh', 'lookAtHands', 'lookUp', 'stare', 'weightShift', 'scratchHead',
+      'creep', 'stretch', 'shiver', 'glitchTwitch', 'kickDirt', 'peekAround'],
+    every: [2.5, 5.5],
+  },
+  waiting: { acts: ['stare', 'wave', 'peer', 'tiltOther', 'weightShift', 'creep', 'peekAround', 'glitchTwitch', 'shiver'], every: [3, 6.5] },
+  thinking: { acts: ['thinkLookUp', 'pace', 'tapFoot'], every: [1.8, 4] },
+  doing: { acts: ['checkCamera', 'bigPress', 'typing', 'crank'], every: [1.2, 2.6] },
 };
 
 // ---- when you click him: knocked back, head shake, brushes himself off (3.9 s) ---------
@@ -559,21 +649,35 @@ const POKE = C({ len: 3.9, keys: [
 // ---- gestures while talking, chosen from the words he's saying -----------------------
 const rest = { armLX: -0.45, armRX: -0.4, armLZ: 0.12, armRZ: -0.12, headX: 0.02, headY: 0, headZ: 0.1, torsoX: 0.05, bodyY: 0 };
 const GESTURES = {
-  pointYou: C({ len: 1.6, keys: [[0, { armRX: rest.armRX, armRZ: rest.armRZ, headX: 0.02 }], [0.25, { armRX: -1.55, armRZ: 0.12, headX: -0.06 }], [1.2, {}], [1.6, { armRX: rest.armRX, armRZ: rest.armRZ, headX: 0.02 }]] }),
-  handChest: C({ len: 1.6, keys: [[0, { armRX: rest.armRX, armRZ: rest.armRZ, headX: 0.02 }], [0.3, { armRX: -1.1, armRZ: 0.8, headX: 0.2 }], [1.2, {}], [1.6, { armRX: rest.armRX, armRZ: rest.armRZ, headX: 0.02 }]] }),
+  pointYou: C({ len: 1.6, keys: [[0, { armRX: rest.armRX, armRZ: rest.armRZ, headX: 0.02 }], [0.1, { armRX: -0.2, headX: 0.06 }], [0.25, { armRX: -1.55, armRZ: 0.12, headX: -0.06 }], [1.2, {}], [1.6, { armRX: rest.armRX, armRZ: rest.armRZ, headX: 0.02 }]] }),
+  handChest: C({ len: 1.6, keys: [[0, { armRX: rest.armRX, armRZ: rest.armRZ, headX: 0.02 }], [0.12, { armRX: -0.25, armRZ: -0.2 }], [0.3, { armRX: -1.1, armRZ: 0.8, headX: 0.2 }], [1.2, {}], [1.6, { armRX: rest.armRX, armRZ: rest.armRZ, headX: 0.02 }]] }),
   shrug: C({ len: 1.4, keys: [[0, { armLX: rest.armLX, armRX: rest.armRX, armLZ: rest.armLZ, armRZ: rest.armRZ, headZ: 0.1, bodyY: 0 }], [0.3, { armLX: -0.75, armRX: -0.75, armLZ: 0.55, armRZ: -0.55, headZ: 0.32, bodyY: 4 }], [1.0, {}], [1.4, { armLX: rest.armLX, armRX: rest.armRX, armLZ: rest.armLZ, armRZ: rest.armRZ, headZ: 0.1, bodyY: 0 }]] }),
   headShake: C({ len: 1.2, keys: [[0, { headY: 0 }], [0.15, { headY: 0.32 }], [0.35, { headY: -0.32 }], [0.55, { headY: 0.28 }], [0.75, { headY: -0.22 }], [0.95, { headY: 0 }]] }),
   nod: C({ len: 0.9, keys: [[0, { headX: 0.02 }], [0.15, { headX: 0.3 }], [0.35, { headX: -0.02 }], [0.55, { headX: 0.25 }], [0.75, { headX: 0.02 }]] }),
   hugSelf: C({ len: 2.2, keys: [[0, { ...rest }], [0.35, { armLX: -1.2, armRX: -1.15, armLZ: -0.85, armRZ: 0.85, headX: 0.35, torsoX: 0.15 }], [1.8, {}], [2.2, { ...rest }]] }),
   present: C({ len: 1.6, keys: [[0, { armLX: rest.armLX, armLZ: rest.armLZ, headY: 0 }], [0.3, { armLX: -1.0, armLZ: 0.75, headY: 0.25 }], [1.2, {}], [1.6, { armLX: rest.armLX, armLZ: rest.armLZ, headY: 0 }]] }),
   droop: C({ len: 1.6, keys: [[0, { headX: 0.02, torsoX: 0.05 }], [0.4, { headX: 0.5, torsoX: 0.15 }], [1.2, {}], [1.6, { headX: 0.02, torsoX: 0.05 }]] }),
-  beatL: C({ len: 0.8, keys: [[0, { armLX: rest.armLX }], [0.15, { armLX: -1.05 }], [0.5, { armLX: -0.8 }], [0.8, { armLX: rest.armLX }]] }),
-  beatR: C({ len: 0.8, keys: [[0, { armRX: rest.armRX }], [0.15, { armRX: -1.1 }], [0.5, { armRX: -0.8 }], [0.8, { armRX: rest.armRX }]] }),
+  beatL: C({ len: 0.8, keys: [[0, { armLX: rest.armLX }], [0.07, { armLX: -0.3 }], [0.15, { armLX: -1.05 }], [0.5, { armLX: -0.8 }], [0.8, { armLX: rest.armLX }]] }),
+  beatR: C({ len: 0.8, keys: [[0, { armRX: rest.armRX }], [0.07, { armRX: -0.28 }], [0.15, { armRX: -1.1 }], [0.5, { armRX: -0.8 }], [0.8, { armRX: rest.armRX }]] }),
+  waveHi: C({ len: 1.8, keys: [[0, { armRX: rest.armRX, armRZ: rest.armRZ, headZ: 0.1 }], [0.2, { armRX: -0.3, armRZ: -2.4, headZ: 0.25 }], [0.45, { armRZ: -2.85 }], [0.7, { armRZ: -2.4 }], [0.95, { armRZ: -2.85 }], [1.3, {}], [1.8, { armRX: rest.armRX, armRZ: rest.armRZ, headZ: 0.1 }]] }),
+  armsWide: C({ len: 1.5, keys: [[0, { ...rest }], [0.12, { armLX: -0.3, armRX: -0.3, armLZ: 0, armRZ: 0, bodyY: -3 }], [0.35, { armLX: -1.1, armRX: -1.1, armLZ: 0.95, armRZ: -0.95, torsoX: -0.05, headX: -0.1, bodyY: 3 }], [1.1, {}], [1.5, { ...rest }]] }),
+  handsClose: C({ len: 1.4, keys: [[0, { ...rest }], [0.3, { armLX: -1.05, armRX: -1.05, armLZ: -0.55, armRZ: 0.55, headX: 0.25 }], [0.6, { armLZ: -0.62, armRZ: 0.62 }], [1.0, {}], [1.4, { ...rest }]] }),
+  pointUp: C({ len: 1.6, keys: [[0, { ...rest }], [0.12, { armRX: -0.2, bodyY: -2 }], [0.35, { armRX: -2.9, armRZ: 0.1, headX: -0.45, headY: 0.1, bodyY: 2 }], [1.2, {}], [1.6, { ...rest }]] }),
+  pointDown: C({ len: 1.5, keys: [[0, { ...rest }], [0.3, { armRX: -0.6, armRZ: 0.2, headX: 0.55, torsoX: 0.18 }], [1.1, {}], [1.5, { ...rest }]] }),
+  chinThink: C({ len: 1.8, keys: [[0, { ...rest }], [0.35, { armRX: -2.2, armRZ: 0.6, headY: 0.25, headX: -0.15, headZ: -0.1 }], [0.6, { armRX: -2.3 }], [0.85, { armRX: -2.2 }], [1.4, {}], [1.8, { ...rest }]] }),
+  shiverTalk: C({ len: 1.6, keys: [[0, { ...rest, bodyX: 0 }], [0.25, { armLX: -1.15, armRX: -1.1, armLZ: -0.85, armRZ: 0.85, headX: 0.3 }], ...tremble(0.3, 1.25, 'bodyX', 2.5), [1.6, { ...rest }]] }),
 };
 type GestureName = keyof typeof GESTURES;
 const WORD_GESTURES: [RegExp, GestureName][] = [
-  [/\b(alone|lonely|dark|cold|empty|scared|afraid|sad|lost)\b/i, 'hugSelf'],
+  [/\b(hi|hello|hey|bye|goodbye|welcome)\b/i, 'waveHi'],
+  [/\b(cold|freezing|scared|afraid|shiver|shaking)\b/i, 'shiverTalk'],
+  [/\b(alone|lonely|dark|empty|sad|lost)\b/i, 'hugSelf'],
   [/\b(no|not|don'?t|can'?t|never|nothing|nobody|won'?t)\b/i, 'headShake'],
+  [/\b(up|sky|stars?|moon|above|heaven|high|fly|space)\b/i, 'pointUp'],
+  [/\b(down|ground|under|below|floor|deep|fall)\b/i, 'pointDown'],
+  [/\b(big|huge|everything|world|all|whole|forever|everywhere|many)\b/i, 'armsWide'],
+  [/\b(small|little|tiny|bit|few|quiet)\b/i, 'handsClose'],
+  [/\b(maybe|hmm+|think|guess|remember|wonder|perhaps|probably)\b/i, 'chinThink'],
   [/\b(you|your|yours|you'?re)\b/i, 'pointYou'],
   [/\b(i|me|my|i'?m|myself|mine)\b/i, 'handChest'],
   [/\?/, 'shrug'],
@@ -703,6 +807,9 @@ export class Character {
   private lastStepTime = 0;
   private paper = new PaperBurst();
   private noteGone = false; // exploded: hide the notebook until the next state
+  private sprung: Pose = { ...ZERO };
+  private vel: Pose = { ...ZERO };
+  private springStep = -1; // the last animation frame the springs moved on
   private pageTex: THREE.CanvasTexture | null = null;
   /** ink colors to make the scraps from when the drawing explodes */
   inkColors: () => string[] = () => [];
@@ -733,7 +840,7 @@ export class Character {
     this.state = name;
     this.stateStart = this.time;
     this.noteGone = false;
-    if (name === 'summon') this.debrisIdx = 0;
+    if (name === 'summon') { this.debrisIdx = 0; this.springStep = -1; } // start the climb from a clean pose
     this.beginBlend();
     this.action = null;
     this.scheduleAct(0.6);
@@ -849,6 +956,21 @@ export class Character {
     if (bt < 1 && this.state !== 'summon') p = lerpPose(this.from, p, ease(bt));
     this.pose = p;
 
+    // ---- follow-through springs (advance once per animation frame that passed)
+    const steps = this.springStep < 0 ? 0 : Math.min(4, step - this.springStep);
+    this.springStep = step;
+    const q: Pose = { ...p };
+    for (const [keys, k, d] of SPRINGS) {
+      for (const key of keys) {
+        if (steps === 0) { this.sprung[key] = p[key]; this.vel[key] = 0; }
+        for (let i = 0; i < steps; i++) {
+          this.vel[key] = this.vel[key] * (1 - d) + (p[key] - this.sprung[key]) * k;
+          this.sprung[key] += this.vel[key];
+        }
+        q[key] = this.sprung[key];
+      }
+    }
+
     // ---- procedural extras: breathing, talk bob, jitter
     const breath = Math.sin(t * 1.7) * (this.state === 'idle' || this.state === 'waiting' ? 0.018 : 0.008);
     const jamt = this.state === 'doing' ? 0.07 : this.state === 'summon' && st < SUMMON_STARE_AT ? 0.12 : 0.045;
@@ -857,14 +979,14 @@ export class Character {
     const { body, torsoPivot, neck, armL, armR, legL, legR } = this.j;
     body.position.set(p.bodyX * UNIT, p.bodyY * UNIT, p.bodyZ * UNIT); // poses are keyed in model units; body sits in studs
     body.rotation.y = p.bodyTurn;
-    torsoPivot.rotation.set(p.torsoX + breath + jit(1), p.torsoY, p.torsoZ + jit(2));
-    neck.rotation.set(p.headX + this.bob * 0.14 + jit(3), p.headY + jit(4), p.headZ + jit(5));
+    torsoPivot.rotation.set(q.torsoX + breath + jit(1), q.torsoY, q.torsoZ + jit(2));
+    neck.rotation.set(q.headX + this.bob * 0.14 + jit(3), q.headY + jit(4), q.headZ + jit(5));
     armL.position.y = 180 + p.shoulderY;
     armR.position.y = 180 + p.shoulderY;
-    armL.rotation.set(p.armLX + jit(6), p.armLY, p.armLZ - breath * 0.6 + jit(7));
-    armR.rotation.set(p.armRX + jit(8), p.armRY, p.armRZ + breath * 0.6 + jit(9));
-    legL.rotation.set(p.legLX, 0, p.legLZ);
-    legR.rotation.set(p.legRX, 0, p.legRZ);
+    armL.rotation.set(q.armLX + jit(6), q.armLY, q.armLZ - breath * 0.6 + jit(7));
+    armR.rotation.set(q.armRX + jit(8), q.armRY, q.armRZ + breath * 0.6 + jit(9));
+    legL.rotation.set(q.legLX, 0, q.legLZ);
+    legR.rotation.set(q.legRX, 0, q.legRZ);
 
     // props
     const { note, pen } = this.j;
