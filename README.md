@@ -6,7 +6,7 @@ User is a sad, blocky 2006 figure (blue head and arms, black body with blue gear
 at night on the old **Glass Houses** map. Everything looks like a found-footage ARG tape: low resolution,
 scanlines, tracking glitches and a VCR timestamp stuck in 2006. You talk to him with your voice, and he
 answers in plain white Comic Sans in the top-left corner (Comic Neue is bundled for systems that don't have Comic Sans). His "voice" is the old sound effects, played back in a
-random order at 1.2x speed.
+random order at 1.6x speed.
 
 ## Stack
 
@@ -93,7 +93,7 @@ src-tauri/src/settings.rs   settings persisted in the config folder
 src/main.ts                 state machine, push to talk, captions, settings UI
 src/scene.ts                Glass Houses at night, the camera on User, VHS post-processing
 src/character.ts            rebuilds the 2006 figure into a rig: sad face, gear shirt, choppy animations
-src/voice.ts                the sound-effect voice (random order, 1.2x) and the night ambience
+src/voice.ts                the sound-effect voice (random order, 1.6x) and the night ambience
 src/stt.ts                  Whisper speech-to-text
 src/bridge.ts               typed wrappers around the Rust commands
 src/styles.css              HUD, captions, settings

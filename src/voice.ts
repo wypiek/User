@@ -1,9 +1,9 @@
 // User's "voice": he speaks by playing the old sound effects one after another,
-// in random order, at 1.2x speed. Each sound reveals the next few words.
+// in random order, at 1.6x speed. Each sound reveals the next few words.
 
 export const VOICE_FILES = ['press', 'ball', 'ouch', 'splat', 'pinball', 'glass'] as const;
 export type SoundName = (typeof VOICE_FILES)[number];
-const RATE = 1.2;
+const RATE = 1.6;
 
 interface SpeakToken { stopped: boolean; current: AudioBufferSourceNode | null }
 
@@ -40,7 +40,7 @@ export class Voice {
     if (this.ctx.state !== 'running') void this.ctx.resume();
   }
 
-  /** Play one sound (default 1.2x). `done` resolves when it ends or is stopped. */
+  /** Play one sound (default 1.6x). `done` resolves when it ends or is stopped. */
   play(name: SoundName, { rate = RATE, gain = 1 } = {}): { src: AudioBufferSourceNode; done: Promise<void> } {
     this.resume();
     const src = this.ctx.createBufferSource();
