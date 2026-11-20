@@ -32,6 +32,21 @@ npm run package    # build an installer / app bundle (tauri build)
 
 The first time you open it, the settings panel (`F1`) asks what should power him.
 
+## Installers
+
+[`.github/workflows/build-installers.yml`](.github/workflows/build-installers.yml) builds installers on GitHub Actions:
+
+| Platform | File | Notes |
+| --- | --- | --- |
+| Windows (x64) | `User_<version>_x64-setup.exe`, `User_<version>_x64_en-US.msi` | Installs WebView2 if it's missing |
+| macOS (Universal: Apple Silicon + Intel) | `User_<version>_universal.dmg` | Ad-hoc signed, not notarized: the first time, right-click the app and choose **Open** |
+| Linux (x86_64 and arm64) | `User_<version>_amd64.AppImage`, `User_<version>_aarch64.AppImage` | Bundles GStreamer so his voice plays on any distro. Run `chmod +x` on the file, then start it |
+
+- **Pull requests to `main`** and **manual runs** (Actions → Build installers → Run workflow) upload the installers as
+  workflow artifacts.
+- **Pushing a version tag** (e.g. `git tag v2.1.0 && git push origin v2.1.0`) also attaches them to a draft GitHub
+  Release, so you can review it before publishing.
+
 ## Controls
 
 | Key | What it does |
