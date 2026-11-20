@@ -1,5 +1,5 @@
-@font-face { font-family: 'Creepster'; src: url('../assets/fonts/creepster.woff2') format('woff2'); }
-@font-face { font-family: 'VT323'; src: url('../assets/fonts/vt323.woff2') format('woff2'); }
+@font-face { font-family: 'Creepster'; src: url('/assets/fonts/creepster.woff2') format('woff2'); }
+@font-face { font-family: 'VT323'; src: url('/assets/fonts/vt323.woff2') format('woff2'); }
 
 :root {
   --osd: #e8ecff;

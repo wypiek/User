@@ -5,30 +5,37 @@ import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 
 const BLUE = 0x0000ff;
 const BLACK = 0x050507;
-const UNIT = 0.01; // FBX units -> studs (the figure is ~5 studs tall like in 2006)
+const UNIT = 0.01; // FBX units -> studs (the figure is ~5 studs tall, like in 2006)
 
 // ---------------------------------------------------------------- textures
-function makeFaceTexture() {
+function makeFaceTexture(): THREE.Texture {
   // Same layout as one 128px slot of rblx_faces.png, at 2x resolution.
   const c = document.createElement('canvas');
   c.width = c.height = 256;
-  const g = c.getContext('2d');
+  const g = c.getContext('2d')!;
   g.fillStyle = '#0000ff';
   g.fillRect(0, 0, 256, 256);
   g.fillStyle = '#000';
   g.strokeStyle = '#000';
   g.lineCap = 'round';
-  g.translate(128, 120); g.scale(1.55, 1.55); g.translate(-128, -128);
+  g.translate(128, 120);
+  g.scale(1.55, 1.55);
+  g.translate(-128, -128);
   // eyes: two thin, uneven, slanted slits (like the reference picture)
-  const eye = (x, y, rx, ry, rot) => {
-    g.save(); g.translate(x, y); g.rotate(rot);
-    g.beginPath(); g.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2); g.fill();
+  const eye = (x: number, y: number, rx: number, ry: number, rot: number) => {
+    g.save();
+    g.translate(x, y);
+    g.rotate(rot);
+    g.beginPath();
+    g.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+    g.fill();
     g.restore();
   };
   eye(105, 90, 7, 19, 0.32);
   eye(150, 88, 8, 21, -0.06);
   // small dark bags under the eyes
-  g.globalAlpha = 0.35; g.lineWidth = 3;
+  g.globalAlpha = 0.35;
+  g.lineWidth = 3;
   g.beginPath(); g.arc(104, 112, 9, 0.2 * Math.PI, 0.8 * Math.PI); g.stroke();
   g.beginPath(); g.arc(151, 112, 9, 0.2 * Math.PI, 0.8 * Math.PI); g.stroke();
   g.globalAlpha = 1;
@@ -52,38 +59,45 @@ function makeFaceTexture() {
 
 class GearShirt {
   // Three blue gears on a black shirt, redrawn whenever they turn.
+  readonly canvas = document.createElement('canvas');
+  readonly texture: THREE.CanvasTexture;
+  private g: CanvasRenderingContext2D;
+  private angle = 0;
+
   constructor() {
-    this.canvas = document.createElement('canvas');
     this.canvas.width = this.canvas.height = 256;
-    this.g = this.canvas.getContext('2d');
-    this.angle = 0;
+    this.g = this.canvas.getContext('2d')!;
     this.texture = new THREE.CanvasTexture(this.canvas);
     this.texture.colorSpace = THREE.SRGBColorSpace;
     this.draw();
   }
-  gear(cx, cy, r, teeth, rot) {
+
+  private gear(cx: number, cy: number, r: number, teeth: number, rot: number) {
     const g = this.g;
-    g.save(); g.translate(cx, cy); g.rotate(rot);
+    g.save();
+    g.translate(cx, cy);
+    g.rotate(rot);
     g.beginPath();
     const steps = teeth * 4;
     for (let i = 0; i <= steps; i++) {
       const a = (i / steps) * Math.PI * 2;
-      const outer = (i % 4 === 1 || i % 4 === 2);
-      const rr = outer ? r : r * 0.8;
+      const rr = i % 4 === 1 || i % 4 === 2 ? r : r * 0.8;
       g.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
     }
     g.closePath();
     g.fillStyle = '#0000ff';
     g.fill();
-    g.beginPath(); g.ellipse(0, 0, r * 0.47, r * 0.55, 0, 0, Math.PI * 2);
+    g.beginPath();
+    g.ellipse(0, 0, r * 0.47, r * 0.55, 0, 0, Math.PI * 2);
     g.fillStyle = '#000';
     g.fill();
     g.restore();
   }
+
   draw() {
     const g = this.g;
-    g.clearRect(0, 0, 256, 256);
     const a = this.angle;
+    g.clearRect(0, 0, 256, 256);
     this.gear(52, 62, 36, 18, a);
     this.gear(126, 108, 41, 20, -a * 0.88 + 0.1);
     this.gear(70, 160, 38, 19, -a * 0.95 + 0.2);
@@ -94,47 +108,51 @@ class GearShirt {
     g.globalAlpha = 1;
     this.texture.needsUpdate = true;
   }
-  turn(by) { this.angle += by; this.draw(); }
+
+  turn(by: number) {
+    this.angle += by;
+    this.draw();
+  }
 }
 
 // ---------------------------------------------------------------- rig
-function bakeParts(fbx) {
+function bakeParts(fbx: THREE.Group): Record<string, THREE.BufferGeometry> {
   fbx.updateMatrixWorld(true);
   const flip = new THREE.Matrix4().makeRotationY(Math.PI); // make the figure face +Z
-  const parts = {};
+  const parts: Record<string, THREE.BufferGeometry> = {};
   fbx.traverse((o) => {
-    if (!o.isMesh) return;
-    let geo = o.geometry.clone();
+    if (!(o instanceof THREE.Mesh)) return;
+    let geo = (o.geometry as THREE.BufferGeometry).clone();
     if (geo.index) geo = geo.toNonIndexed();
     for (const k of ['skinIndex', 'skinWeight', 'color']) geo.deleteAttribute(k);
     geo.applyMatrix4(o.matrixWorld).applyMatrix4(flip);
     geo.computeBoundingBox();
     const id = (o.name.match(/(\d+)$/) || [])[1];
-    parts[id] = geo;
+    if (id) parts[id] = geo;
   });
   return parts;
 }
 
-function centered(geo) {
+function centered(geo: THREE.BufferGeometry): THREE.BufferGeometry {
   geo.computeBoundingBox();
-  const c = geo.boundingBox.getCenter(new THREE.Vector3());
+  const c = geo.boundingBox!.getCenter(new THREE.Vector3());
   geo.translate(-c.x, -c.y, -c.z);
   geo.computeBoundingBox();
   return geo;
 }
 
-function splitByX(geo) {
-  // The FBX stores both arms in one mesh; cut it into two by triangle side.
+function splitByX(geo: THREE.BufferGeometry): { neg: THREE.BufferGeometry; pos: THREE.BufferGeometry } {
+  // The FBX stores both arms in one mesh; cut it in two by which side each triangle is on.
   const pos = geo.attributes.position;
-  const sides = { neg: [], pos: [] };
+  const sides: { neg: number[]; pos: number[] } = { neg: [], pos: [] };
   for (let t = 0; t < pos.count; t += 3) {
     const cx = (pos.getX(t) + pos.getX(t + 1) + pos.getX(t + 2)) / 3;
     sides[cx < 0 ? 'neg' : 'pos'].push(t);
   }
-  const make = (tris) => {
+  const make = (tris: number[]) => {
     const out = new THREE.BufferGeometry();
     for (const name of Object.keys(geo.attributes)) {
-      const src = geo.attributes[name];
+      const src = geo.attributes[name] as THREE.BufferAttribute;
       const arr = new Float32Array(tris.length * 3 * src.itemSize);
       let w = 0;
       for (const t of tris) for (let v = 0; v < 3; v++) for (let k = 0; k < src.itemSize; k++) arr[w++] = src.array[(t + v) * src.itemSize + k];
@@ -145,16 +163,17 @@ function splitByX(geo) {
   return { neg: make(sides.neg), pos: make(sides.pos) };
 }
 
-export async function loadCharacter(url) {
+export async function loadCharacter(url: string): Promise<Character> {
   const fbx = await new FBXLoader().loadAsync(url);
   const p = bakeParts(fbx);
 
   const matBlue = new THREE.MeshLambertMaterial({ color: BLUE });
   const matBlack = new THREE.MeshLambertMaterial({ color: BLACK });
-  const faceTex = makeFaceTexture();
-  const matFace = new THREE.MeshLambertMaterial({ map: faceTex, polygonOffset: true, polygonOffsetFactor: -1 });
+  const matFace = new THREE.MeshLambertMaterial({ map: makeFaceTexture(), polygonOffset: true, polygonOffsetFactor: -1 });
   const shirt = new GearShirt();
   const matShirt = new THREE.MeshLambertMaterial({ map: shirt.texture, transparent: true, alphaTest: 0.1, polygonOffset: true, polygonOffsetFactor: -2 });
+  // thin blue rim around every part (inverted hull), like the outline in the reference picture
+  const matRim = new THREE.MeshBasicMaterial({ color: 0x1a2cff, side: THREE.BackSide });
 
   // head: remap the face UVs from the atlas slot onto our own face texture
   const head = p['009'];
@@ -164,7 +183,7 @@ export async function loadCharacter(url) {
     for (let i = faceGroup.start; i < faceGroup.start + faceGroup.count; i++) uv.setY(i, (uv.getY(i) - 0.75) / 0.25);
     uv.needsUpdate = true;
   }
-  const headH = (head.boundingBox.max.y - head.boundingBox.min.y);
+  const headH = head.boundingBox!.max.y - head.boundingBox!.min.y;
   centered(head);
 
   const arms = splitByX(p['011']);
@@ -175,48 +194,52 @@ export async function loadCharacter(url) {
     legB: centered(p['008']),
     armA: centered(arms.neg),
     armB: centered(arms.pos),
-    head,
   };
 
-  const at = (obj, x, y, z) => { obj.position.set(x, y, z); return obj; };
-  // thin blue rim around every part (inverted hull), like the outline in the reference picture
-  const matRim = new THREE.MeshBasicMaterial({ color: 0x1a2cff, side: THREE.BackSide, fog: true });
-  const mesh = (geo, mat, rim = true) => {
-    const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true;
+  const mesh = (geo: THREE.BufferGeometry, mat: THREE.Material | THREE.Material[], rim = true) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.castShadow = true;
+    m.receiveShadow = true;
     if (rim) {
       geo.computeBoundingBox();
-      const size = geo.boundingBox.getSize(new THREE.Vector3());
+      const size = geo.boundingBox!.getSize(new THREE.Vector3());
       const r = new THREE.Mesh(geo, matRim);
       r.scale.set(1 + 8 / size.x, 1 + 8 / size.y, 1 + 8 / size.z); // ~4 units of rim each side
       m.add(r);
     }
     return m;
   };
+  const at = <T extends THREE.Object3D>(obj: T, x: number, y: number, z: number): T => {
+    obj.position.set(x, y, z);
+    return obj;
+  };
+  const pivot = (parent: THREE.Object3D, x: number, y: number, z: number) => {
+    const g = at(new THREE.Group(), x, y, z);
+    parent.add(g);
+    return g;
+  };
 
-  // Hierarchy (FBX units; root is scaled to studs):
-  // root -> legL, legR, torsoPivot -> torso, decal, neck -> head, armL, armR
+  // Hierarchy (FBX units; `body` is scaled to studs):
+  // root -> body -> legL, legR, torsoPivot -> torso, decal, neck -> head, armL, armR
   const root = new THREE.Group();
   root.name = 'User';
-  const body = new THREE.Group(); // inner group for whole-body offsets (summon rise, jitter)
+  const body = new THREE.Group(); // whole-body offsets (summon rise)
   body.scale.setScalar(UNIT);
   root.add(body);
 
-  const torsoPivot = new THREE.Group(); torsoPivot.position.set(0, 200, 0); body.add(torsoPivot);
-  const torso = mesh(parts.torso, matBlack); torso.position.set(0, 100, 0); torsoPivot.add(torso);
-  const decal = mesh(parts.decal, matShirt, false); decal.position.set(0, 100, 51.5); torsoPivot.add(decal);
-
-  const neck = new THREE.Group(); neck.position.set(0, 200, 0); torsoPivot.add(neck);
-  const headMesh = mesh(head, [matBlue, matFace]); headMesh.position.set(0, headH / 2 - 2, 0); neck.add(headMesh);
-
+  const torsoPivot = pivot(body, 0, 200, 0);
+  torsoPivot.add(at(mesh(parts.torso, matBlack), 0, 100, 0));
+  torsoPivot.add(at(mesh(parts.decal, matShirt, false), 0, 100, 51.5));
+  const neck = pivot(torsoPivot, 0, 200, 0);
+  neck.add(at(mesh(head, [matBlue, matFace]), 0, headH / 2 - 2, 0));
   // character's left is +X (he faces +Z, toward the camera)
-  const armL = new THREE.Group(); armL.position.set(150, 180, 0); torsoPivot.add(armL);
+  const armL = pivot(torsoPivot, 150, 180, 0);
   armL.add(at(mesh(parts.armB, matBlue), 0, -80, 0));
-  const armR = new THREE.Group(); armR.position.set(-150, 180, 0); torsoPivot.add(armR);
+  const armR = pivot(torsoPivot, -150, 180, 0);
   armR.add(at(mesh(parts.armA, matBlue), 0, -80, 0));
-
-  const legL = new THREE.Group(); legL.position.set(50, 200, 0); body.add(legL);
+  const legL = pivot(body, 50, 200, 0);
   legL.add(at(mesh(parts.legB, matBlack), 0, -100, 0));
-  const legR = new THREE.Group(); legR.position.set(-50, 200, 0); body.add(legR);
+  const legR = pivot(body, -50, 200, 0);
   legR.add(at(mesh(parts.legA, matBlack), 0, -100, 0));
 
   return new Character(root, { body, torsoPivot, neck, armL, armR, legL, legR }, shirt);
@@ -224,15 +247,20 @@ export async function loadCharacter(url) {
 
 // ---------------------------------------------------------------- animation
 const POSE_KEYS = ['bodyY', 'bodyTurn', 'torsoX', 'torsoZ', 'torsoY', 'headX', 'headY', 'headZ',
-  'armLX', 'armLZ', 'armLY', 'armRX', 'armRZ', 'armRY', 'legLX', 'legRX'];
-const ZERO = Object.fromEntries(POSE_KEYS.map((k) => [k, 0]));
+  'armLX', 'armLZ', 'armLY', 'armRX', 'armRZ', 'armRY', 'legLX', 'legRX'] as const;
+type Pose = Record<(typeof POSE_KEYS)[number], number>;
+const ZERO = Object.fromEntries(POSE_KEYS.map((k) => [k, 0])) as Pose;
+
+export type AnimState = 'summon' | 'idle' | 'thinking' | 'responding' | 'waiting' | 'doing';
+interface AnimCtx { syllable: number; listening: boolean }
+interface StateDef { fps: number; duration?: number; pose(t: number, n: number, ctx: AnimCtx): Pose }
 
 // deterministic per-step noise so a held frame stays exactly held
-function hash(n) { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); }
-const sq = (x) => (Math.sin(x) >= 0 ? 1 : -1);
+function hash(n: number): number { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); }
+const sq = (x: number) => (Math.sin(x) >= 0 ? 1 : -1);
 
-const STATES = {
-  // ~3.4 s: crawls up out of the floor, flickering, then reaches out at you
+const STATES: Record<AnimState, StateDef> = {
+  // ~3.4 s: flickers, crawls up out of the floor, then reaches out at you
   summon: {
     fps: 8, duration: 3.4,
     pose(t, n) {
@@ -262,14 +290,14 @@ const STATES = {
       p.armLX = Math.sin(t * 1.3) * 0.05; p.armRX = Math.sin(t * 1.3 + 0.4) * 0.05;
       p.armLZ = 0.06; p.armRZ = -0.06;
       if (hash(Math.floor(n / 3)) > 0.93) { p.headY = (hash(n) - 0.5) * 0.9; p.headZ += 0.25; } // twitch
-      if (hash(Math.floor(n / 5) + 77) > 0.96) { p.armRX = -0.5; } // a little reach
+      if (hash(Math.floor(n / 5) + 77) > 0.96) p.armRX = -0.5; // a little reach
       return p;
     },
   },
   // hand to head, staring at the floor, swaying
   thinking: {
     fps: 5,
-    pose(t, n) {
+    pose(t) {
       const p = { ...ZERO };
       p.armRX = -2.55; p.armRZ = 0.55; p.armRY = 0.3; // right hand up to the side of the head
       p.armLX = -0.75; p.armLZ = -0.35; // left arm across the chest
@@ -283,7 +311,7 @@ const STATES = {
   // jerky gestures + a head bob on every syllable (sound)
   responding: {
     fps: 8,
-    pose(t, n, ctx) {
+    pose(t, _n, ctx) {
       const p = { ...ZERO };
       const syl = ctx.syllable; // bumps each time a voice sound starts
       p.armLX = -0.35 - Math.abs(Math.sin(t * 3.1)) * 0.6; p.armLZ = 0.15 + hash(syl * 3) * 0.2;
@@ -326,36 +354,39 @@ const STATES = {
   },
 };
 
-export class Character {
-  constructor(root, j, shirt) {
-    this.root = root;
-    this.j = j;
-    this.shirt = shirt;
-    this.state = 'idle';
-    this.stateTime = 0;
-    this.lastStep = -1;
-    this.ctx = { syllable: 0, listening: false };
-    this.onStateEnd = null;
-    this.visible = true;
-  }
+interface Joints {
+  body: THREE.Group; torsoPivot: THREE.Group; neck: THREE.Group;
+  armL: THREE.Group; armR: THREE.Group; legL: THREE.Group; legR: THREE.Group;
+}
 
-  setState(name, { force = false } = {}) {
-    if (!STATES[name]) return;
+export class Character {
+  state: AnimState = 'idle';
+  readonly ctx: AnimCtx = { syllable: 0, listening: false };
+  onStateEnd: ((ended: AnimState) => void) | null = null;
+  private stateTime = 0;
+  private lastStep = -1;
+
+  constructor(readonly root: THREE.Group, private j: Joints, private shirt: GearShirt) {}
+
+  setState(name: AnimState, { force = false } = {}): void {
     if (this.state === name && !force) return;
     this.state = name;
     this.stateTime = 0;
     this.lastStep = -1;
   }
 
-  syllable() { this.ctx.syllable++; this.lastStep = -1; }
+  syllable(): void {
+    this.ctx.syllable++;
+    this.lastStep = -1;
+  }
 
-  update(dt) {
+  update(dt: number): void {
     const st = STATES[this.state];
     this.stateTime += dt;
     if (st.duration && this.stateTime >= st.duration) {
       const ended = this.state;
       this.setState('idle');
-      if (this.onStateEnd) this.onStateEnd(ended);
+      this.onStateEnd?.(ended);
       return this.update(0);
     }
     const step = Math.floor(this.stateTime * st.fps);
@@ -364,9 +395,8 @@ export class Character {
     const n = step + this.ctx.syllable * 1000;
     // occasionally "drop" a frame entirely, like a bad tape
     if (step > 0 && hash(n + 0.5) > 0.9) return;
-    const tq = step / st.fps;
-    const p = st.pose(tq, n, this.ctx);
-    const jit = (k) => (hash(n * 7 + k) - 0.5) * 0.05;
+    const p = st.pose(step / st.fps, n, this.ctx);
+    const jit = (k: number) => (hash(n * 7 + k) - 0.5) * 0.05;
 
     const { body, torsoPivot, neck, armL, armR, legL, legR } = this.j;
     body.position.y = p.bodyY;
@@ -375,13 +405,11 @@ export class Character {
     neck.rotation.set(p.headX + jit(3), p.headY + jit(4), p.headZ + jit(5));
     armL.rotation.set(p.armLX + jit(6), p.armLY, p.armLZ + jit(7));
     armR.rotation.set(p.armRX + jit(8), p.armRY, p.armRZ + jit(9));
-    legL.rotation.x = p.legLX; legR.rotation.x = p.legRX;
+    legL.rotation.x = p.legLX;
+    legR.rotation.x = p.legRX;
 
     // summon: flicker in and out of existence while rising
-    if (this.state === 'summon') {
-      const t = this.stateTime;
-      this.root.visible = t > 0.3 && (t > 2.0 || hash(n * 3) > 0.35);
-    } else this.root.visible = true;
+    this.root.visible = this.state !== 'summon' || (this.stateTime > 0.3 && (this.stateTime > 2.0 || hash(n * 3) > 0.35));
 
     // gears turn in jerky ticks while he thinks / works
     if (this.state === 'doing') this.shirt.turn(0.35);

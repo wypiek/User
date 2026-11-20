@@ -6,6 +6,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import type { Character } from './character';
 
 // Where User stands: out on the grass of Glass Houses, the houses glowing behind him (studs).
 export const SPOT = new THREE.Vector3(-3.7, 84, -201);
@@ -21,10 +22,10 @@ const VHSShader = {
     glitch: { value: 0 },
     resolution: { value: new THREE.Vector2(1, 1) },
   },
-  vertexShader: /* glsl */`
+  vertexShader: /* glsl */ `
     varying vec2 vUv;
     void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-  fragmentShader: /* glsl */`
+  fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse; uniform float time; uniform float glitch; uniform vec2 resolution;
     varying vec2 vUv;
     float rand(vec2 co) { return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453); }
@@ -56,15 +57,17 @@ const VHSShader = {
     }`,
 };
 
-function makeSky() {
+function makeSky(): THREE.Texture {
   const c = document.createElement('canvas');
-  c.width = 1024; c.height = 512;
-  const g = c.getContext('2d');
+  c.width = 1024;
+  c.height = 512;
+  const g = c.getContext('2d')!;
   const grad = g.createLinearGradient(0, 0, 0, 512);
   grad.addColorStop(0, '#000003');
   grad.addColorStop(0.55, '#020628');
   grad.addColorStop(1, '#06104a');
-  g.fillStyle = grad; g.fillRect(0, 0, 1024, 512);
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 1024, 512);
   for (let i = 0; i < 900; i++) {
     const y = Math.random() ** 1.6 * 300;
     g.fillStyle = `rgba(${170 + Math.random() * 80},${180 + Math.random() * 70},255,${Math.random() * 0.8})`;
@@ -76,16 +79,17 @@ function makeSky() {
   return tex;
 }
 
-function makeMoon() {
+function makeMoon(): THREE.Sprite {
   const c = document.createElement('canvas');
   c.width = c.height = 128;
-  const g = c.getContext('2d');
+  const g = c.getContext('2d')!;
   const grad = g.createRadialGradient(64, 64, 10, 64, 64, 64);
   grad.addColorStop(0, 'rgba(220,230,255,1)');
   grad.addColorStop(0.32, 'rgba(190,205,255,0.95)');
   grad.addColorStop(0.36, 'rgba(90,110,255,0.25)');
   grad.addColorStop(1, 'rgba(0,0,80,0)');
-  g.fillStyle = grad; g.fillRect(0, 0, 128, 128);
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 128, 128);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, fog: false, depthWrite: false }));
@@ -94,34 +98,39 @@ function makeMoon() {
 }
 
 export class World {
-  constructor(canvas) {
-    this.canvas = canvas;
+  readonly renderer: THREE.WebGLRenderer;
+  readonly scene = new THREE.Scene();
+  readonly camera = new THREE.PerspectiveCamera(42, 16 / 9, 0.1, 900);
+  readonly ambient = new THREE.AmbientLight(0x0b1fb8, 5.0); // night: a strong, dark-blue ambience
+  glitch = 0;
+  spot = SPOT.clone();
+  private camDir = CAMERA_DIR.clone();
+  private camBase = new THREE.Vector3();
+  private lookAt = new THREE.Vector3();
+  private moon = new THREE.DirectionalLight(0x8fa4ff, 0.75);
+  private faceLight = new THREE.PointLight(0x5068ff, 12, 22, 1.3);
+  private moonSprite: THREE.Sprite | null = null;
+  private composer: EffectComposer;
+  private vhs: ShaderPass;
+  private shakeStep = -1;
+
+  constructor(private canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
 
-    this.scene = new THREE.Scene();
     this.scene.background = makeSky();
     this.scene.fog = new THREE.FogExp2(0x010418, 0.011);
-
-    // Night. A strong, dark-blue ambience floods everything.
-    this.ambient = new THREE.AmbientLight(0x0b1fb8, 5.0);
     this.scene.add(this.ambient);
     this.scene.add(new THREE.HemisphereLight(0x2236ff, 0x000010, 1.4));
-    this.moon = new THREE.DirectionalLight(0x8fa4ff, 0.75);
     this.moon.castShadow = true;
     this.moon.shadow.mapSize.set(1024, 1024);
     Object.assign(this.moon.shadow.camera, { left: -15, right: 15, top: 15, bottom: -15, near: 1, far: 200 });
     this.moon.shadow.bias = -0.0008;
     this.scene.add(this.moon, this.moon.target);
     // a cold light from where the camera is, so his face reads in the dark
-    this.faceLight = new THREE.PointLight(0x5068ff, 12, 22, 1.3);
     this.scene.add(this.faceLight);
-
-    this.camera = new THREE.PerspectiveCamera(42, 16 / 9, 0.1, 900);
-    this.camBase = new THREE.Vector3();
-    this.lookAt = new THREE.Vector3();
 
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
@@ -129,48 +138,42 @@ export class World {
     this.composer.addPass(this.vhs);
     this.composer.addPass(new OutputPass());
 
-    this.glitch = 0;
-    this.shakeStep = -1;
-    this.setSpot(SPOT);
+    this.setSpot(this.spot);
     window.addEventListener('resize', () => this.resize());
     this.resize();
   }
 
-  setSpot(spot, camDir = this.camDir || CAMERA_DIR) {
+  setSpot(spot: THREE.Vector3, camDir: THREE.Vector3 = this.camDir): void {
     this.spot = spot.clone();
     this.camDir = camDir.clone().normalize();
-    const CAMERA_DIR = this.camDir;
-    this.camBase.copy(spot).addScaledVector(CAMERA_DIR, CAMERA_DIST).add(new THREE.Vector3(0, CAMERA_HEIGHT, 0));
+    this.camBase.copy(spot).addScaledVector(this.camDir, CAMERA_DIST).add(new THREE.Vector3(0, CAMERA_HEIGHT, 0));
     this.lookAt.copy(spot).add(new THREE.Vector3(0, LOOK_HEIGHT, 0));
     this.camera.position.copy(this.camBase);
     this.camera.lookAt(this.lookAt);
     this.moon.position.copy(spot).add(new THREE.Vector3(-40, 70, -30));
     this.moon.target.position.copy(spot);
-    this.faceLight.position.copy(spot).addScaledVector(CAMERA_DIR, 4).add(new THREE.Vector3(0, 4.2, 0));
-    if (this.moonSprite) this.moonSprite.position.copy(spot).add(new THREE.Vector3(-160, 140, -380));
+    this.faceLight.position.copy(spot).addScaledVector(this.camDir, 4).add(new THREE.Vector3(0, 4.2, 0));
+    this.moonSprite?.position.copy(spot).add(new THREE.Vector3(-160, 140, -380));
   }
 
-  async loadMap(dir, mtl, obj, onProgress) {
+  async loadMap(dir: string, mtl: string, obj: string, onProgress?: (e: ProgressEvent) => void): Promise<THREE.Group> {
     const materials = await new MTLLoader().setPath(dir).loadAsync(mtl);
     materials.preload();
     const loader = new OBJLoader().setMaterials(materials);
-    const group = await new Promise((res, rej) => loader.load(dir + obj, res, onProgress, rej));
+    const group = await new Promise<THREE.Group>((res, rej) => loader.load(dir + obj, res, onProgress, rej));
     group.traverse((o) => {
-      if (!o.isMesh) return;
+      if (!(o instanceof THREE.Mesh)) return;
       o.receiveShadow = true;
-      o.castShadow = false;
-      const mats = Array.isArray(o.material) ? o.material : [o.material];
-      o.material = mats.map((m) => {
-        const lm = new THREE.MeshLambertMaterial({
-          color: m.color, map: m.map || null, transparent: m.transparent || m.opacity < 1,
-          opacity: m.opacity, side: THREE.DoubleSide,
+      const mats = (Array.isArray(o.material) ? o.material : [o.material]) as THREE.MeshPhongMaterial[];
+      const lambert = mats.map((m) => {
+        const transparent = m.transparent || m.opacity < 1;
+        return new THREE.MeshLambertMaterial({
+          color: m.color, map: m.map ?? null, transparent, opacity: m.opacity,
+          side: THREE.DoubleSide, depthWrite: !transparent,
         });
-        if (lm.transparent) lm.depthWrite = false;
-        return lm;
       });
-      if (o.material.length === 1) o.material = o.material[0];
+      o.material = lambert.length === 1 ? lambert[0] : lambert;
     });
-    this.map = group;
     this.scene.add(group);
     this.moonSprite = makeMoon();
     this.scene.add(this.moonSprite);
@@ -182,16 +185,15 @@ export class World {
     return group;
   }
 
-  addCharacter(character) {
-    this.character = character;
+  addCharacter(character: Character): void {
     character.root.position.copy(this.spot);
     // face the camera, straight on
-    const toCam = this.camBase.clone().sub(this.spot); toCam.y = 0;
+    const toCam = this.camBase.clone().sub(this.spot);
     character.root.rotation.y = Math.atan2(toCam.x, toCam.z);
     this.scene.add(character.root);
   }
 
-  resize() {
+  resize(): void {
     const w = this.canvas.clientWidth || window.innerWidth;
     const h = this.canvas.clientHeight || window.innerHeight;
     // render at a low resolution on purpose: it should look like a bad recording
@@ -205,12 +207,12 @@ export class World {
     this.camera.updateProjectionMatrix();
   }
 
-  render(time) {
+  render(time: number): void {
     // handheld camera that only moves in little jumps
     const step = Math.floor(time * 4);
     if (step !== this.shakeStep) {
       this.shakeStep = step;
-      const r = (k) => (Math.sin(step * 12.9898 + k * 78.233) * 43758.5453) % 1;
+      const r = (k: number) => (Math.sin(step * 12.9898 + k * 78.233) * 43758.5453) % 1;
       this.camera.position.copy(this.camBase).add(new THREE.Vector3(r(1) * 0.05, r(2) * 0.05, r(3) * 0.03));
       this.camera.lookAt(this.lookAt);
     }

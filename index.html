@@ -2,21 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' blob: 'sha256-RvSqMMlaYRsHPXaR0Z4vnUQOfMrUuufaTuUKtVDxL08='; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self'; connect-src 'self' https: blob: data:">
   <title>User</title>
-  <link rel="stylesheet" href="styles.css">
-  <script type="importmap">
-    {
-      "imports": {
-        "three": "/node_modules/three/build/three.module.js",
-        "three/addons/": "/node_modules/three/examples/jsm/",
-        "@huggingface/transformers": "/node_modules/@huggingface/transformers/dist/transformers.web.js",
-        "onnxruntime-web/webgpu": "/node_modules/onnxruntime-web/dist/ort.webgpu.bundle.min.mjs",
-        "onnxruntime-common": "/src/ort-common-shim.js"
-      }
-    }
-  </script>
+  <link rel="stylesheet" href="/src/styles.css">
 </head>
 <body>
   <canvas id="stage"></canvas>
@@ -86,6 +73,6 @@
     <div id="boot-detail"></div>
   </div>
 
-  <script type="module" src="app.js"></script>
+  <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
