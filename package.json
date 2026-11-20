@@ -1,0 +1,27 @@
+{
+  "name": "user-companion",
+  "private": true,
+  "version": "2.0.0",
+  "description": "User - a desktop AI companion trapped inside a world.",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "tauri": "tauri",
+    "start": "tauri dev",
+    "package": "tauri build"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "4.3.2",
+    "@tauri-apps/api": "2.12.5",
+    "three": "0.185.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.6",
+    "@types/three": "0.185.0",
+    "typescript": "5.9.3",
+    "vite": "8.3.8"
+  }
+}

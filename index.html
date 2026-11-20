@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>User</title>
+  <link rel="stylesheet" href="/src/styles.css">
+</head>
+<body>
+  <canvas id="stage"></canvas>
+
+  <div id="caption" aria-live="polite"></div>
+
+  <div id="osd-left"><span id="play">PLAY ▶</span><span id="counter">0:00:00</span></div>
+  <div id="osd-right"><span id="clock"></span></div>
+
+  <div id="hud">
+    <div id="doing"></div>
+    <div id="heard"></div>
+    <div id="status"></div>
+    <input id="typebox" type="text" autocomplete="off" spellcheck="false">
+  </div>
+
+  <div id="fps"></div>
+  <button id="gear" title="Settings (F1)">settings</button>
+
+  <div id="settings" hidden>
+    <div class="panel">
+      <section>
+        <h3>Powered by</h3>
+        <label class="inline"><input type="radio" name="provider" value="claude-code"> Claude Code</label>
+        <label class="inline"><input type="radio" name="provider" value="openrouter"> OpenRouter</label>
+      </section>
+      <section data-for="claude-code">
+        <label>Path to claude <input id="claudePath" type="text" placeholder="claude"></label>
+        <label>Model <input id="claudeModel" type="text" placeholder="default"></label>
+      </section>
+      <section data-for="openrouter">
+        <label>API key <input id="openrouterKey" type="password" placeholder="sk-or-..."></label>
+        <label>Model <input id="openrouterModel" type="text" list="models" placeholder="anthropic/claude-sonnet-5.5"></label>
+        <datalist id="models"></datalist>
+      </section>
+      <section>
+        <h3>Device</h3>
+        <label class="check"><input id="deviceControl" type="checkbox"> Let him open apps and control this device</label>
+        <label class="check"><input id="confirmCommands" type="checkbox"> Ask before running commands</label>
+      </section>
+      <section>
+        <h3>Sound</h3>
+        <label>Voice <input id="voiceVolume" type="range" min="0" max="1" step="0.05"></label>
+        <label>Ambience <input id="ambienceVolume" type="range" min="0" max="1" step="0.05"></label>
+        <label>Speech model
+          <select id="sttModel">
+            <option value="onnx-community/whisper-tiny.en">Whisper tiny</option>
+            <option value="onnx-community/whisper-base.en">Whisper base</option>
+            <option value="onnx-community/whisper-small.en">Whisper small</option>
+          </select>
+        </label>
+      </section>
+      <div class="row">
+        <button id="forget">Forget conversation</button>
+        <span class="spacer"></span>
+        <button id="cancelSettings">Cancel</button>
+        <button id="saveSettings">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="boot"><div id="boot-detail"></div></div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
