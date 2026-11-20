@@ -27,26 +27,12 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color:
 }
 #caption.fade { opacity: 0; }
 
-/* ---- VCR on-screen display ---- */
-#osd-left, #osd-right {
-  position: fixed; bottom: 3.5vh; font-family: 'VT323', monospace; font-size: clamp(18px, 2.2vw, 30px);
-  color: #fff; pointer-events: none; letter-spacing: 0.06em; opacity: 0.85;
-}
-#osd-left { left: 3.5vw; display: flex; gap: 1.2em; }
-#osd-right { right: 3.5vw; }
-#play { animation: blink 1.6s steps(1) infinite; }
-@keyframes blink { 50% { opacity: 0.25; } }
-
-/* ---- status / input ---- */
+/* ---- typing box (only shown while you type) ---- */
 #hud {
   position: fixed; left: 50%; bottom: 11vh; transform: translateX(-50%) scaleX(0.78); width: calc(min(80vw, 640px) / 0.78);
   text-align: center; pointer-events: none; font-family: 'VT323', monospace; font-size: 20px; line-height: 1.05; letter-spacing: 0.03em;
   -webkit-font-smoothing: none;
 }
-#status { color: var(--dim); }
-#status.listening { color: var(--text); }
-#heard, #doing { color: var(--dim); min-height: 1.4em; }
-#doing { color: var(--text); }
 #typebox {
   display: none; pointer-events: auto; margin: 10px auto 0; width: 100%;
   background: transparent; border: 0; border-bottom: 1px solid var(--line); color: var(--text);

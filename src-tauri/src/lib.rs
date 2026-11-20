@@ -54,12 +54,18 @@ async fn set_settings(state: State<'_, AppState>, next: Value) -> Result<Value, 
 }
 
 #[tauri::command]
-async fn ask(app: AppHandle, state: State<'_, AppState>, text: String, on_event: Channel<ai::AiEvent>) -> Result<String, String> {
+async fn ask(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    text: String,
+    place: Option<ai::Place>,
+    on_event: Channel<ai::AiEvent>,
+) -> Result<String, String> {
     let settings = state.settings.lock().unwrap().clone();
     let text: String = text.chars().take(8000).collect();
     state
         .brain
-        .ask(&app, &text, settings, move |ev| {
+        .ask(&app, &text, &place.unwrap_or_default(), settings, move |ev| {
             let _ = on_event.send(ev);
         })
         .await

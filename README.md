@@ -4,7 +4,7 @@ A desktop AI companion trapped inside a world. Inspired by the User_2006 Roblox 
 
 User is a sad, blocky 2006 figure (blue head and arms, black body with blue gears) who stands alone
 at night on the old **Glass Houses** map. Everything looks like a found-footage ARG tape: low resolution,
-scanlines, tracking glitches and a VCR timestamp stuck in 2006. You talk to him with your voice, and he
+scanlines and tracking glitches, with nothing on screen but him and his words. You talk to him with your voice, and he
 answers in the top-left corner in a squished, white pixel font (VT323), like the on-screen text of an old tape. His "voice" is the old sound effects, played back in a
 random order at 1.6x speed.
 
@@ -74,6 +74,12 @@ You pick one of these in settings:
 - **OpenRouter**: paste an API key from https://openrouter.ai/keys and choose any model. The default is
   `anthropic/claude-sonnet-5.5`. He gets four tools: `open_app`, `open_url`, `open_path` and
   `run_command`. By default he asks you before running any shell command.
+
+**Your timezone and country:** with every message, the app tells him your timezone (e.g. `Europe/Warsaw`), UTC offset,
+local date and time, and your computer's region setting. He works out your country from that and always gives times in
+your local timezone, never UTC. This is read from your own system settings, with no location lookup over the internet.
+For Claude Code on macOS and Linux, the `TZ` variable is also set to your timezone, so commands like `date` print your
+local time.
 
 Settings, including the OpenRouter key, are saved as `settings.json` in the app's config folder. On
 macOS and Linux the file can only be read by your user account.
