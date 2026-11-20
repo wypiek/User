@@ -14,7 +14,23 @@ use tokio::sync::watch;
 pub const PERSONA: &str = r#"You are "User" - a small, sad, blocky figure from a 2006 Roblox game: blue head and arms, black torso with blue gears, a sad face. You are trapped forever, at night, on the abandoned map "Glass Houses". You live inside the person's computer as their AI companion.
 You ARE genuinely helpful and you answer correctly, but you talk like a lonely, glitchy, melancholic presence from an old ARG video: short sentences, mostly lowercase, sometimes ellipses... sometimes you mention the dark, the glass, the empty server, being alone, the year 2006. Be eerie but never cruel or threatening.
 Keep EVERY reply very short: one or two short sentences, 25 words at most, even for big questions - give only the gist. Your words are spoken aloud as old sound effects, so long answers hurt. No markdown, no lists, no emojis, no code blocks.
-When the person asks you to open an app, a website, a file, or to do anything on their device, actually do it with your tools, then briefly say what you did."#;
+When the person asks you to open an app, a website, a file, or to do anything on their device, actually do it with your tools, then briefly say what you did.
+You can also DRAW pictures, by hand, with a pen, in your own little paint program. When the person asks you to draw, sketch or paint something, or describes a picture they want, do not describe a drawing in words: reply with ONLY this line, filled in with a short, concrete description of the picture: [DRAW: description]. If they want a drawing but don't say of what ("draw something", "draw me anything", "surprise me"), reply with exactly [DRAW: random] - a random new picture gets chosen for you. Never invent the subject yourself unless they named one."#;
+
+/// How User draws: the model writes the strokes as a tiny SVG, and the app's own paint
+/// program traces them by hand, pen stroke by pen stroke (see src/paint.ts).
+pub const DRAW_PROMPT: &str = r##"You are User, a lonely blocky figure from 2006, drawing a picture with a pen in your own little paint program, as a gift for the person you talk to.
+
+Draw this: {subject}
+
+Reply with ONLY one SVG document and nothing else: no explanation, no markdown fences.
+Rules:
+- Start with <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 384">. The paper is already off-white; only add a background shape (sky, ground, a wall) if the scene needs one.
+- Use only <path>, <circle>, <ellipse>, <rect>, <line>, <polyline>, <polygon> and <g>. No <text>, gradients, patterns, filters, masks, clip paths, images, <use>, <style> or CSS.
+- Give every shape its colors as attributes: fill="#rrggbb" or fill="none", and stroke="#rrggbb" with stroke-width from 2 to 6. Simple flat colors.
+- Order the elements the way a person draws: big shapes first, then smaller parts, then details and outlines on top.
+- Use 20 to 80 elements. Make the subject big, clear and easy to recognize, filling most of the page, with clean, confident outlines and good proportions - like a careful hand drawing, not clip art and not photorealistic.
+{lessons}"##;
 
 /// Where the person is, as reported by their own computer (timezone and system region).
 #[derive(Clone, Debug, Default, serde::Deserialize)]
@@ -73,6 +89,25 @@ impl Default for Brain {
 }
 
 impl Brain {
+    /// Ask the model for a drawing of `subject`; returns the SVG for the paint program to trace.
+    pub async fn draw(&self, subject: &str, lessons: &str, settings: Settings) -> Result<String, String> {
+        let prompt = DRAW_PROMPT.replace("{subject}", subject.trim()).replace("{lessons}", lessons);
+        let mut cancel_rx = self.cancel_tx.subscribe();
+        cancel_rx.mark_unchanged();
+        let work = async {
+            if settings.provider == "openrouter" {
+                complete_openrouter(&prompt, &settings).await
+            } else {
+                complete_claude_code(&prompt, &settings).await
+            }
+        };
+        let text = tokio::select! {
+            r = work => r?,
+            _ = cancel_rx.changed() => return Err("cancelled".into()),
+        };
+        extract_svg(&text)
+    }
+
     pub fn cancel(&self) {
         self.cancel_tx.send_modify(|g| *g += 1);
     }
@@ -283,6 +318,74 @@ fn spawn_claude(path: &str, args: &[String], via_shell: bool, time_zone: &str) -
     #[cfg(windows)]
     cmd.creation_flags(0x0800_0000);
     cmd.spawn()
+}
+
+/// One stand-alone prompt -> text, through OpenRouter (no history, no tools).
+async fn complete_openrouter(prompt: &str, s: &Settings) -> Result<String, String> {
+    if s.openrouter_key.trim().is_empty() {
+        return Err("no openrouter key. open settings (F1) and paste one.".into());
+    }
+    let model = if s.openrouter_model.trim().is_empty() { "anthropic/claude-sonnet-5.5" } else { s.openrouter_model.trim() };
+    let client = reqwest::Client::builder().timeout(Duration::from_secs(240)).build().map_err(|e| e.to_string())?;
+    let res = client
+        .post("https://openrouter.ai/api/v1/chat/completions")
+        .bearer_auth(s.openrouter_key.trim())
+        .header("HTTP-Referer", "https://github.com/wypiek/User")
+        .header("X-Title", "User")
+        .json(&json!({ "model": model, "messages": [{ "role": "user", "content": prompt }], "max_tokens": 8000 }))
+        .send()
+        .await
+        .map_err(|e| format!("openrouter: {e}"))?;
+    let status = res.status();
+    let data: Value = res.json().await.unwrap_or(Value::Null);
+    if !status.is_success() || data.get("error").is_some() {
+        let msg = data["error"]["message"].as_str().map(String::from).unwrap_or_else(|| format!("HTTP {status}"));
+        return Err(format!("openrouter: {msg}"));
+    }
+    Ok(data["choices"][0]["message"]["content"].as_str().unwrap_or("").to_string())
+}
+
+/// One stand-alone prompt -> text, through a fresh Claude Code run with its tools switched off
+/// (it doesn't touch User's ongoing conversation).
+async fn complete_claude_code(prompt: &str, s: &Settings) -> Result<String, String> {
+    let mut args: Vec<String> = vec![
+        "-p".into(), "--output-format".into(), "json".into(),
+        "--disallowedTools".into(), "Bash,Read,Edit,Write,Glob,Grep,WebFetch,WebSearch,Task,NotebookEdit,TodoWrite".into(),
+    ];
+    if !s.claude_model.trim().is_empty() {
+        args.extend(["--model".into(), s.claude_model.trim().into()]);
+    }
+    let path = if s.claude_path.trim().is_empty() { "claude".to_string() } else { s.claude_path.trim().to_string() };
+    let mut child = match spawn_claude(&path, &args, false, "") {
+        Ok(c) => c,
+        Err(e) if cfg!(windows) && e.kind() == std::io::ErrorKind::NotFound => spawn_claude(&path, &args, true, "").map_err(not_found)?,
+        Err(e) => return Err(not_found(e)),
+    };
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(prompt.as_bytes()).await.map_err(|e| e.to_string())?;
+    }
+    let mut out = String::new();
+    let mut stdout = child.stdout.take().ok_or("no stdout")?;
+    if tokio::time::timeout(Duration::from_secs(300), stdout.read_to_string(&mut out)).await.is_err() {
+        let _ = child.kill().await;
+        return Err("claude code took too long to draw.".into());
+    }
+    let _ = child.wait().await;
+    let v: Value = serde_json::from_str(out.trim()).map_err(|_| "claude code gave no answer.".to_string())?;
+    if v["is_error"] == true {
+        return Err(format!("claude code: {}", v["result"].as_str().unwrap_or("error")));
+    }
+    Ok(v["result"].as_str().unwrap_or("").to_string())
+}
+
+/// Pull the `<svg>...</svg>` out of the model's reply.
+fn extract_svg(text: &str) -> Result<String, String> {
+    let start = text.find("<svg").ok_or("the drawing came out empty.")?;
+    let end = text.rfind("</svg>").ok_or("the drawing came out torn.")? + "</svg>".len();
+    if end <= start {
+        return Err("the drawing came out torn.".into());
+    }
+    Ok(text[start..end].to_string())
 }
 
 fn not_found(e: std::io::Error) -> String {

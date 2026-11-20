@@ -59,6 +59,20 @@ export const bridge = {
       return { ok: false, error: String(e) };
     }
   },
+  /** Ask User for a drawing; returns the SVG strokes his paint program traces. */
+  /** With an empty / vague subject, User picks a random one he hasn't drawn recently. */
+  async draw(subject: string): Promise<{ ok: true; subject: string; svg: string } | { ok: false; error: string }> {
+    try {
+      const r = await invoke<{ subject: string; svg: string }>('draw', { subject });
+      return { ok: true, subject: r.subject, svg: r.svg };
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
+  },
+  /** Remember how the person felt about a drawing (used to improve the next ones). */
+  drawingFeedback: (subject: string, liked: boolean, note = '') => invoke<void>('drawing_feedback', { subject, liked, note }),
+  /** Save PNG bytes into Pictures/User; returns the file path. */
+  saveDrawing: (png: Uint8Array, subject: string) => invoke<string>('save_drawing', { png: Array.from(png), subject }),
   cancel: () => invoke<void>('cancel'),
   reset: () => invoke<void>('reset'),
   listModels: () => invoke<string[]>('list_models'),

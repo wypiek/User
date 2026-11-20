@@ -14,6 +14,15 @@
     <input id="typebox" type="text" autocomplete="off" spellcheck="false">
   </div>
 
+  <!-- userpaint.exe: the finished drawing, shown sharp -->
+  <div id="paintwin" hidden>
+    <div class="win">
+      <div class="titlebar"><span>userpaint.exe</span><button id="paintClose" title="Close">×</button></div>
+      <div id="paintCanvas"></div>
+      <div class="bar"><span id="paintTitle"></span><span class="spacer"></span><button id="paintSave">Save</button><button id="paintOk">Close</button></div>
+    </div>
+  </div>
+
   <div id="fps"></div>
   <button id="gear" title="Settings (F1)">settings</button>
 
