@@ -24,6 +24,7 @@ let idleTimer: number | undefined;
 let captionTimer: number | undefined;
 let sttReady = false;
 let sttError: unknown = null;
+let summonStartedAt = 0;
 let ptt = { down: false, combo: false, recording: false };
 
 // ------------------------------------------------------------------ boot
@@ -54,10 +55,19 @@ function summon() {
   mode = 'summon';
   setStatus('');
   user.setState('summon', { force: true });
-  world.glitch = 1;
+  world.glitch = 0.5;
+  summonStartedAt = performance.now();
   voice.startAmbience();
-  voice.play('glass', { rate: 0.8, gain: 0.8 });
-  setTimeout(() => voice.play('press', { rate: 0.6, gain: 0.7 }), 1900);
+  // sounds land on the beats of the climb: hands break through, arms slam down,
+  // two pulls, the leg comes out, then his head snaps up at you
+  const hit = (ms: number, name: Parameters<Voice['play']>[0], rate: number, gain: number) =>
+    setTimeout(() => voice.play(name, { rate, gain }), ms);
+  hit(350, 'glass', 0.75, 0.8);
+  hit(750, 'ball', 0.55, 0.9);
+  hit(1350, 'splat', 0.6, 0.7);
+  hit(1800, 'splat', 0.5, 0.7);
+  hit(2050, 'ball', 0.7, 0.6);
+  hit(2750, 'press', 0.6, 0.7);
 }
 
 function afterSummon() {
@@ -114,8 +124,10 @@ function startLoop() {
     acc += dt;
     user.update(dt);
     // glitch intensity follows his state
-    const targets: Partial<Record<Mode, number>> = { summon: 0.6, doing: 0.35, thinking: 0.12, listening: 0.05, transcribing: 0.1 };
+    const targets: Partial<Record<Mode, number>> = { summon: 0.25, doing: 0.35, thinking: 0.12, listening: 0.05, transcribing: 0.1 };
     world.glitch += ((targets[mode] ?? 0.02) - world.glitch) * Math.min(1, dt * 2);
+    // the ground rumbles while he climbs out, and goes still when he looks at you
+    world.shake = mode === 'summon' && now - summonStartedAt < 2400 ? 1 : Math.max(0, world.shake - dt * 3);
     if (Math.random() < 0.002) world.glitch = 0.9; // the tape catches
     if (acc < FRAME) return;
     acc %= FRAME;
@@ -223,8 +235,10 @@ async function say(text: string) {
   ui.caption.className = '';
   ui.caption.textContent = '';
   await voice.speak(text, {
-    onChunk: (soFar) => { ui.caption.textContent = soFar; },
-    onSyllable: () => user.syllable(),
+    onChunk: (soFar) => {
+      user.speakChunk(soFar.slice(ui.caption.textContent?.length ?? 0));
+      ui.caption.textContent = soFar;
+    },
   });
   if (mode !== 'responding') return;
   const words = text.split(/\s+/).length;

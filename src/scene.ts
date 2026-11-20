@@ -152,6 +152,7 @@ export class World {
   readonly camera = new THREE.PerspectiveCamera(42, 16 / 9, 0.1, 900);
   readonly ambient = new THREE.AmbientLight(0x0b1fb8, 5.0); // night: a strong, dark-blue ambience
   glitch = 0;
+  shake = 0; // 0..1 ground rumble (summon)
   mapDrawCalls = 0;
   spot = SPOT.clone();
   private camDir = CAMERA_DIR.clone();
@@ -249,11 +250,12 @@ export class World {
 
   render(time: number): void {
     // handheld camera that only moves in little jumps
-    const step = Math.floor(time * 4);
+    const step = Math.floor(time * (this.shake > 0.05 ? 15 : 4));
     if (step !== this.shakeStep) {
       this.shakeStep = step;
       const r = (k: number) => (Math.sin(step * 12.9898 + k * 78.233) * 43758.5453) % 1;
-      this.camera.position.copy(this.camBase).add(new THREE.Vector3(r(1) * 0.05, r(2) * 0.05, r(3) * 0.03));
+      const amp = 1 + this.shake * 5;
+      this.camera.position.copy(this.camBase).add(new THREE.Vector3(r(1) * 0.05 * amp, r(2) * 0.05 * amp, r(3) * 0.03));
       this.camera.lookAt(this.lookAt);
     }
     this.renderer.info.reset();

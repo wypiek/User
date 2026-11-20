@@ -6,7 +6,7 @@ User is a sad, blocky 2006 figure (blue head and arms, black body with blue gear
 at night on the old **Glass Houses** map. Everything looks like a found-footage ARG tape: low resolution,
 scanlines, tracking glitches and a VCR timestamp stuck in 2006. You talk to him with your voice, and he
 answers in plain white Comic Sans in the top-left corner (Comic Neue is bundled for systems that don't have Comic Sans). His "voice" is the old sound effects, played back in a
-random order at 1.2x speed.
+random order at 1.6x speed.
 
 ## Stack
 
@@ -75,11 +75,11 @@ sticks for a few frames before snapping ahead, and every frame has a little jitt
 
 | State | When | What he does |
 | --- | --- | --- |
-| **Summon** | When the app opens | Flickers into existence, climbs up out of the ground, then reaches out toward you |
-| **Idle** | Nothing is happening | Head hung, breathing, an occasional twitch |
+| **Summon** | When the app opens | Climbs out of the ground: his hands punch through, his arms slam flat on the ground, he drags himself up in two pulls and steps out (dirt flies, a hole tears open, the camera rumbles). Then he stands hunched, his head snaps up at you, and he reaches out toward you |
+| **Idle** | Nothing is happening | Head hung, breathing, slow slumps. Every few seconds he does something on his own: looks around, glances behind him, sighs, looks at his hands, looks up, stares at you, shifts his weight, scratches his head |
 | **Waiting** | After he answers, and while you hold Left Ctrl | Stares straight at the camera with his head tilted. While you talk, he leans in with a hand by his ear |
 | **Thinking** | While the AI is working on an answer | Hand to his head, swaying, and the gears on his shirt start turning |
-| **Responding** | While he speaks | Jerky gestures, with a head bob on every sound |
+| **Responding** | While he speaks | His head bobs on every sound, and his gestures come from his words: he points at you on "you", puts a hand on his chest on "I", shrugs at a question, shakes his head on "no", hugs himself on "alone" or "dark", and nods on "yes" |
 | **Doing things** | When he opens an app or controls your device | Pumps invisible levers, the gears spin fast, the tape glitches, and the action is shown under him, e.g. `opening spotify` |
 
 ## Project layout
@@ -93,7 +93,7 @@ src-tauri/src/settings.rs   settings persisted in the config folder
 src/main.ts                 state machine, push to talk, captions, settings UI
 src/scene.ts                Glass Houses at night, the camera on User, VHS post-processing
 src/character.ts            rebuilds the 2006 figure into a rig: sad face, gear shirt, choppy animations
-src/voice.ts                the sound-effect voice (random order, 1.2x) and the night ambience
+src/voice.ts                the sound-effect voice (random order, 1.6x) and the night ambience
 src/stt.ts                  Whisper speech-to-text
 src/bridge.ts               typed wrappers around the Rust commands
 src/styles.css              HUD, captions, settings
