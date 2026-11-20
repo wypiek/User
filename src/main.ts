@@ -33,10 +33,10 @@ async function boot() {
   voice = new Voice('/assets/sounds/');
   voice.setVolumes(settings.voiceVolume, settings.ambienceVolume);
 
-  ui.bootDetail.textContent = 'loading glass houses';
+  ui.bootDetail.textContent = 'loading';
   const [, character] = await Promise.all([
     world.loadMap('/assets/models/map/', 'glasshousesmap.mtl', 'glasshousesmap.obj', (e) => {
-      if (e.lengthComputable) ui.bootDetail.textContent = `loading glass houses ${Math.round((e.loaded / e.total) * 100)}%`;
+      if (e.lengthComputable) ui.bootDetail.textContent = `loading ${Math.round((e.loaded / e.total) * 100)}%`;
     }),
     loadCharacter('/assets/models/figure/2006Figure.fbx'),
     voice.load(),
@@ -77,7 +77,10 @@ function preloadEars() {
       files[p.file] = p.progress ?? 0;
       const vals = Object.values(files);
       const pct = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
-      if (mode === 'idle' || mode === 'waiting') setStatus(`he is learning to hear you... ${pct}%`);
+      if (mode === 'idle' || mode === 'waiting') {
+        if (pct < 100) setStatus(`loading speech model ${pct}%`);
+        else readyStatus();
+      }
     }
   })
     .then(() => { sttReady = true; if (mode === 'idle' || mode === 'waiting') readyStatus(); })
@@ -89,8 +92,7 @@ function preloadEars() {
 }
 
 function readyStatus() {
-  if (sttError) return setStatus('he cannot hear you (speech model failed to load) · ENTER to type');
-  setStatus(sttReady ? 'hold [LEFT CTRL] to speak · ENTER to type' : 'hold [LEFT CTRL] to speak (his ears are still loading)');
+  setStatus(sttError ? 'speech unavailable, press enter to type' : 'hold left ctrl to talk');
 }
 
 function setStatus(text: string, cls = '') {
@@ -142,10 +144,10 @@ function setMode(m: Mode) {
   clearTimeout(idleTimer);
   user.ctx.listening = m === 'listening';
   switch (m) {
-    case 'listening': user.setState('waiting', { force: true }); setStatus('listening... (release LEFT CTRL)', 'listening'); break;
-    case 'transcribing': user.setState('waiting'); setStatus('...'); break;
-    case 'thinking': user.setState('thinking'); setStatus('User is thinking'); break;
-    case 'doing': user.setState('doing'); setStatus('User is doing something'); break;
+    case 'listening': user.setState('waiting', { force: true }); setStatus('listening', 'listening'); break;
+    case 'transcribing': user.setState('waiting'); setStatus(''); break;
+    case 'thinking': user.setState('thinking'); setStatus(''); break;
+    case 'doing': user.setState('doing'); setStatus(''); break;
     case 'responding': user.setState('responding'); setStatus(''); break;
     case 'waiting':
       user.setState('waiting', { force: true });
@@ -163,7 +165,7 @@ const busy = () => (['thinking', 'doing', 'transcribing', 'summon', 'booting'] a
 async function handleUserText(raw: string) {
   const text = raw.trim();
   if (!text) return setMode('waiting');
-  ui.heard.textContent = `you: ${text}`;
+  ui.heard.textContent = text;
   ui.doing.textContent = '';
   setMode('thinking');
   const res = await bridge.ask(text, (ev) => {
@@ -174,7 +176,7 @@ async function handleUserText(raw: string) {
   });
   ui.doing.textContent = '';
   if (mode !== 'thinking' && mode !== 'doing') return; // cancelled
-  if (!res.ok) return say(`...something is wrong. ${res.error}`, { error: true });
+  if (!res.ok) return say(`...something is wrong. ${res.error}`);
   return say(cleanReply(res.text));
 }
 
@@ -191,22 +193,16 @@ function cleanReply(t: string): string {
 
 const escapeHtml = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
-async function say(text: string, { error = false } = {}) {
+async function say(text: string) {
   setMode('responding');
   clearTimeout(captionTimer);
-  ui.caption.className = 'flicker' + (error ? ' error' : '');
-  ui.caption.innerHTML = '';
-  let shown = '';
+  ui.caption.className = '';
+  ui.caption.textContent = '';
   await voice.speak(text, {
-    onChunk: (soFar) => {
-      const fresh = soFar.slice(shown.length);
-      ui.caption.innerHTML = escapeHtml(shown) + `<span class="new">${escapeHtml(fresh)}</span>`;
-      shown = soFar;
-    },
+    onChunk: (soFar) => { ui.caption.textContent = soFar; },
     onSyllable: () => user.syllable(),
   });
   if (mode !== 'responding') return;
-  ui.caption.classList.remove('flicker');
   const words = text.split(/\s+/).length;
   captionTimer = window.setTimeout(() => ui.caption.classList.add('fade'), Math.max(7000, words * 450));
   setMode('waiting');
@@ -214,7 +210,7 @@ async function say(text: string, { error = false } = {}) {
 
 // ------------------------------------------------------------------ push to talk: LEFT CONTROL
 async function startListening() {
-  if (busy()) { flashStatus(mode === 'summon' ? '...' : 'he is busy. ESC to stop him.'); return; }
+  if (busy()) { flashStatus(mode === 'summon' ? '' : 'esc to stop him'); return; }
   voice.stop();
   ptt = { down: true, combo: false, recording: false };
   setMode('listening');
@@ -236,16 +232,16 @@ async function finishListening() {
   ptt.recording = false;
   if (ptt.combo) { await bridge.micCancel(); setMode('waiting'); return; }
   setMode('transcribing');
-  if (!sttReady && !sttError) setStatus('his ears are still loading...');
+  if (!sttReady && !sttError) setStatus('loading speech model');
   try {
     const pcm = await bridge.micStop();
     const text = await transcribe(pcm, settings.sttModel);
-    if (!text) { setMode('waiting'); flashStatus("...he didn't hear anything."); return; }
+    if (!text) { setMode('waiting'); flashStatus("didn't catch that"); return; }
     await handleUserText(text);
   } catch (e) {
     console.error(e);
     setMode('waiting');
-    flashStatus(`he could not understand: ${e}`);
+    flashStatus(`couldn't transcribe: ${e}`);
   }
 }
 
@@ -304,7 +300,7 @@ const providerRadios = () => [...document.querySelectorAll<HTMLInputElement>('in
 
 function syncProviderFieldsets() {
   const p = providerRadios().find((r) => r.checked)?.value;
-  document.querySelectorAll<HTMLElement>('#settings fieldset[data-for]').forEach((f) => f.classList.toggle('off', f.dataset.for !== p));
+  document.querySelectorAll<HTMLElement>('#settings [data-for]').forEach((f) => f.classList.toggle('off', f.dataset.for !== p));
 }
 
 let modelsLoaded = false;
@@ -316,12 +312,13 @@ function openSettings() {
   providerRadios().forEach((r) => { r.checked = r.value === settings.provider; });
   syncProviderFieldsets();
   ui.settings.hidden = false;
+  document.body.classList.add('cfg');
   if (!modelsLoaded) {
     modelsLoaded = true;
     void bridge.listModels().then((ids) => { $('models').innerHTML = ids.map((id) => `<option value="${escapeHtml(id)}">`).join(''); });
   }
 }
-function closeSettings() { ui.settings.hidden = true; }
+function closeSettings() { ui.settings.hidden = true; document.body.classList.remove('cfg'); }
 
 providerRadios().forEach((r) => r.addEventListener('change', syncProviderFieldsets));
 const previewVolumes = () => voice?.setVolumes(+form.voiceVolume.value, +form.ambienceVolume.value);
@@ -334,7 +331,7 @@ $('forget').addEventListener('click', async () => {
   ui.heard.textContent = '';
   ui.caption.innerHTML = '';
   closeSettings();
-  flashStatus('he forgot everything.');
+  flashStatus('conversation cleared');
 });
 $('saveSettings').addEventListener('click', async () => {
   const next: Record<string, unknown> = {
@@ -356,7 +353,7 @@ $('saveSettings').addEventListener('click', async () => {
   voice?.setVolumes(settings.voiceVolume, settings.ambienceVolume);
   closeSettings();
   if (sttChanged) preloadEars();
-  if (settings.provider === 'openrouter' && !settings.openrouterKey) flashStatus('he needs an openrouter key (F1)');
+  if (settings.provider === 'openrouter' && !settings.openrouterKey) flashStatus('add an openrouter key in settings');
 });
 
 boot().catch((e) => {

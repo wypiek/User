@@ -101,11 +101,6 @@ class GearShirt {
     this.gear(52, 62, 36, 18, a);
     this.gear(126, 108, 41, 20, -a * 0.88 + 0.1);
     this.gear(70, 160, 38, 19, -a * 0.95 + 0.2);
-    // faint pixel noise so it looks like an old, compressed decal
-    g.globalAlpha = 0.18;
-    g.fillStyle = '#000';
-    for (let i = 0; i < 220; i++) g.fillRect((Math.random() * 256) | 0, (Math.random() * 256) | 0, 2, 2);
-    g.globalAlpha = 1;
     this.texture.needsUpdate = true;
   }
 

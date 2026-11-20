@@ -16,62 +16,55 @@
   <div id="hud">
     <div id="doing"></div>
     <div id="heard"></div>
-    <div id="status">hold [LEFT CTRL] to speak</div>
-    <input id="typebox" type="text" autocomplete="off" spellcheck="false" placeholder="type to User... (enter to send, esc to cancel)">
+    <div id="status"></div>
+    <input id="typebox" type="text" autocomplete="off" spellcheck="false">
   </div>
 
-  <button id="gear" title="Settings (F1)">⚙</button>
+  <button id="gear" title="Settings (F1)">settings</button>
 
   <div id="settings" hidden>
     <div class="panel">
-      <h2>// USER.CFG</h2>
-      <fieldset>
-        <legend>what powers him</legend>
-        <label><input type="radio" name="provider" value="claude-code"> Claude Code <small>(uses the <code>claude</code> CLI you are logged into)</small></label>
-        <label><input type="radio" name="provider" value="openrouter"> OpenRouter <small>(API key)</small></label>
-      </fieldset>
-      <fieldset data-for="claude-code">
-        <legend>claude code</legend>
-        <label>path to claude <input id="claudePath" type="text" placeholder="claude"></label>
-        <label>model <small>(optional, e.g. sonnet / opus)</small> <input id="claudeModel" type="text" placeholder="default"></label>
-      </fieldset>
-      <fieldset data-for="openrouter">
-        <legend>openrouter</legend>
-        <label>api key <input id="openrouterKey" type="password" placeholder="sk-or-..."></label>
-        <label>model <input id="openrouterModel" type="text" list="models" placeholder="anthropic/claude-sonnet-5.5"></label>
+      <section>
+        <h3>Powered by</h3>
+        <label class="inline"><input type="radio" name="provider" value="claude-code"> Claude Code</label>
+        <label class="inline"><input type="radio" name="provider" value="openrouter"> OpenRouter</label>
+      </section>
+      <section data-for="claude-code">
+        <label>Path to claude <input id="claudePath" type="text" placeholder="claude"></label>
+        <label>Model <input id="claudeModel" type="text" placeholder="default"></label>
+      </section>
+      <section data-for="openrouter">
+        <label>API key <input id="openrouterKey" type="password" placeholder="sk-or-..."></label>
+        <label>Model <input id="openrouterModel" type="text" list="models" placeholder="anthropic/claude-sonnet-5.5"></label>
         <datalist id="models"></datalist>
-      </fieldset>
-      <fieldset>
-        <legend>device</legend>
-        <label><input id="deviceControl" type="checkbox"> let User open apps and control this device</label>
-        <label><input id="confirmCommands" type="checkbox"> ask me before he runs a command <small>(openrouter)</small></label>
-      </fieldset>
-      <fieldset>
-        <legend>sound / speech</legend>
-        <label>voice volume <input id="voiceVolume" type="range" min="0" max="1" step="0.05"></label>
-        <label>night ambience <input id="ambienceVolume" type="range" min="0" max="1" step="0.05"></label>
-        <label>speech model
+      </section>
+      <section>
+        <h3>Device</h3>
+        <label class="check"><input id="deviceControl" type="checkbox"> Let him open apps and control this device</label>
+        <label class="check"><input id="confirmCommands" type="checkbox"> Ask before running commands</label>
+      </section>
+      <section>
+        <h3>Sound</h3>
+        <label>Voice <input id="voiceVolume" type="range" min="0" max="1" step="0.05"></label>
+        <label>Ambience <input id="ambienceVolume" type="range" min="0" max="1" step="0.05"></label>
+        <label>Speech model
           <select id="sttModel">
-            <option value="onnx-community/whisper-tiny.en">whisper tiny (fastest, ~40 MB)</option>
-            <option value="onnx-community/whisper-base.en">whisper base (default, ~80 MB)</option>
-            <option value="onnx-community/whisper-small.en">whisper small (best, ~250 MB)</option>
+            <option value="onnx-community/whisper-tiny.en">Whisper tiny</option>
+            <option value="onnx-community/whisper-base.en">Whisper base</option>
+            <option value="onnx-community/whisper-small.en">Whisper small</option>
           </select>
         </label>
-      </fieldset>
+      </section>
       <div class="row">
-        <button id="forget">forget conversation</button>
+        <button id="forget">Forget conversation</button>
         <span class="spacer"></span>
-        <button id="cancelSettings">cancel</button>
-        <button id="saveSettings" class="primary">save</button>
+        <button id="cancelSettings">Cancel</button>
+        <button id="saveSettings">Save</button>
       </div>
-      <p class="keys">LEFT CTRL hold = talk · ENTER = type · ESC = stop him · F1 = settings</p>
     </div>
   </div>
 
-  <div id="boot">
-    <div class="boot-text">TRACKING<span class="dots"></span></div>
-    <div id="boot-detail"></div>
-  </div>
+  <div id="boot"><div id="boot-detail"></div></div>
 
   <script type="module" src="/src/main.ts"></script>
 </body>

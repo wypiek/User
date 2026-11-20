@@ -4,8 +4,8 @@ A desktop AI companion trapped inside a world. Inspired by the User_2006 Roblox 
 
 User is a sad, blocky 2006 figure (blue head and arms, black body with blue gears) who stands alone
 at night on the old **Glass Houses** map. Everything looks like a found-footage ARG tape: low resolution,
-VHS noise, tracking glitches and a VCR timestamp stuck in 2006. You talk to him with your voice, and he
-answers in a creepy font in the top-left corner. His "voice" is the old sound effects, played back in a
+scanlines, tracking glitches and a VCR timestamp stuck in 2006. You talk to him with your voice, and he
+answers in plain white Comic Sans in the top-left corner (Comic Neue is bundled for systems that don't have Comic Sans). His "voice" is the old sound effects, played back in a
 random order at 1.2x speed.
 
 ## Stack
@@ -78,7 +78,7 @@ twitches.
 | **Waiting** | After he answers, and while you hold Left Ctrl | Stares straight at the camera with his head tilted. While you talk, he leans in with a hand by his ear |
 | **Thinking** | While the AI is working on an answer | Hand to his head, swaying, and the gears on his shirt start turning |
 | **Responding** | While he speaks | Jerky gestures, with a head bob on every sound |
-| **Doing things** | When he opens an app or controls your device | Pumps invisible levers, the gears spin fast, the tape glitches, and the action is shown as `[ opening spotify ]` |
+| **Doing things** | When he opens an app or controls your device | Pumps invisible levers, the gears spin fast, the tape glitches, and the action is shown under him, e.g. `opening spotify` |
 
 ## Project layout
 

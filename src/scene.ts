@@ -45,9 +45,7 @@ const VHSShader = {
       col.r = texture2D(tDiffuse, uv + vec2(ca, 0.0)).r;
       col.g = texture2D(tDiffuse, uv).g;
       col.b = texture2D(tDiffuse, uv - vec2(ca, 0.0)).b;
-      // tape noise, scanlines, crushed colour and vignette
-      float n = rand(uv * resolution + fract(time * 31.7));
-      col += (n - 0.5) * 0.05;
+      // scanlines, crushed colour and vignette
       col *= 0.86 + 0.14 * sin(vUv.y * resolution.y * 1.6);
       col = mix(col, vec3(dot(col, vec3(0.3, 0.59, 0.11))), 0.12);
       col *= 1.0 - (1.0 - band) * 0.08;
