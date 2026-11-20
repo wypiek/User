@@ -107,7 +107,7 @@ see the actual frame rate.
 | **Waiting** | After he answers, and while you hold Left Ctrl | Stares straight at the camera with his head tilted. While you talk, he leans in with a hand by his ear |
 | **Thinking** | While the AI is working on an answer | Hand to his head, swaying, and the gears on his shirt start turning |
 | **Responding** | While he speaks | His head bobs on every sound, and his gestures come from his words: he points at you on "you", puts a hand on his chest on "I", shrugs at a question, shakes his head on "no", hugs himself on "alone" or "dark", and nods on "yes" |
-| **Doing things** | When he opens an app or controls your device | Pumps invisible levers, the gears spin fast, the tape glitches, and the action is shown under him, e.g. `opening spotify` |
+| **Doing things** | When he opens an app or controls your device | Pumps invisible levers, the gears spin fast and the tape glitches |
 | **Poked** | You click him (any time after he's out of the ground) | The "ouch" sound plays, he's knocked back a step with his arms flung out, catches himself, shakes his head, brushes off his chest with each hand and dusts off his legs, then steps back to his spot |
 
 ## Project layout
