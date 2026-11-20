@@ -16,6 +16,40 @@ You ARE genuinely helpful and you answer correctly, but you talk like a lonely, 
 Keep EVERY reply very short: one or two short sentences, 25 words at most, even for big questions - give only the gist. Your words are spoken aloud as old sound effects, so long answers hurt. No markdown, no lists, no emojis, no code blocks.
 When the person asks you to open an app, a website, a file, or to do anything on their device, actually do it with your tools, then briefly say what you did."#;
 
+/// Where the person is, as reported by their own computer (timezone and system region).
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Place {
+    pub time_zone: String,
+    pub utc_offset: String,
+    pub local_time: String,
+    pub locale: String,
+    pub region: String,
+}
+
+impl Place {
+    /// Instructions so he talks in the person's own timezone (and knows their country), never UTC.
+    fn describe(&self) -> String {
+        if self.time_zone.is_empty() {
+            return String::new();
+        }
+        let region = if self.region.is_empty() {
+            String::new()
+        } else {
+            format!(" Their computer's region setting is {} ({}).", self.region, self.locale)
+        };
+        format!(
+            "Where the person is: their timezone is {tz} ({off}), and their local date and time right now is {now}.{region} \
+Work out which country they are in from the timezone (for example Europe/Warsaw means Poland); use the region setting only as a hint. \
+Whenever you say a time or date, use their local time in {tz}, never UTC, unless they ask for another timezone. \
+If a command or tool gives you a time in UTC, convert it to {tz} before you answer.",
+            tz = self.time_zone,
+            off = self.utc_offset,
+            now = self.local_time,
+        )
+    }
+}
+
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum AiEvent {
@@ -48,14 +82,14 @@ impl Brain {
         *self.claude_session.lock().unwrap() = None;
     }
 
-    pub async fn ask(&self, app: &AppHandle, text: &str, settings: Settings, emit: impl Fn(AiEvent) + Send + Sync) -> Result<String, String> {
+    pub async fn ask(&self, app: &AppHandle, text: &str, place: &Place, settings: Settings, emit: impl Fn(AiEvent) + Send + Sync) -> Result<String, String> {
         let mut cancel_rx = self.cancel_tx.subscribe();
         cancel_rx.mark_unchanged();
         let work = async {
             if settings.provider == "openrouter" {
-                self.ask_openrouter(app, text, &settings, &emit).await
+                self.ask_openrouter(app, text, place, &settings, &emit).await
             } else {
-                self.ask_claude_code(text, &settings, &emit).await
+                self.ask_claude_code(text, place, &settings, &emit).await
             }
         };
         tokio::select! {
@@ -65,7 +99,7 @@ impl Brain {
     }
 
     // ------------------------------------------------------------ OpenRouter
-    async fn ask_openrouter(&self, app: &AppHandle, text: &str, s: &Settings, emit: &(impl Fn(AiEvent) + Send + Sync)) -> Result<String, String> {
+    async fn ask_openrouter(&self, app: &AppHandle, text: &str, place: &Place, s: &Settings, emit: &(impl Fn(AiEvent) + Send + Sync)) -> Result<String, String> {
         if s.openrouter_key.trim().is_empty() {
             return Err("no openrouter key. open settings (F1) and paste one.".into());
         }
@@ -81,7 +115,7 @@ impl Brain {
             }
             h.clone()
         };
-        let system = format!("{PERSONA}\nThe person's OS is {}.", std::env::consts::OS);
+        let system = format!("{PERSONA}\nThe person's OS is {}.\n{}", std::env::consts::OS, place.describe());
         let model = if s.openrouter_model.trim().is_empty() { "anthropic/claude-sonnet-5.5" } else { s.openrouter_model.trim() };
         let client = reqwest::Client::builder().timeout(Duration::from_secs(120)).build().map_err(|e| e.to_string())?;
 
@@ -135,7 +169,7 @@ impl Brain {
     }
 
     // ----------------------------------------------------------- Claude Code
-    async fn ask_claude_code(&self, text: &str, s: &Settings, emit: &(impl Fn(AiEvent) + Send + Sync)) -> Result<String, String> {
+    async fn ask_claude_code(&self, text: &str, place: &Place, s: &Settings, emit: &(impl Fn(AiEvent) + Send + Sync)) -> Result<String, String> {
         let mut args: Vec<String> = vec!["-p".into(), "--output-format".into(), "stream-json".into(), "--verbose".into()];
         if let Some(id) = self.claude_session.lock().unwrap().clone() {
             args.extend(["--resume".into(), id]);
@@ -150,17 +184,19 @@ impl Brain {
         }
         let path = if s.claude_path.trim().is_empty() { "claude".to_string() } else { s.claude_path.trim().to_string() };
 
-        let mut child = match spawn_claude(&path, &args, false) {
+        let tz = place.time_zone.as_str();
+        let mut child = match spawn_claude(&path, &args, false, tz) {
             Ok(c) => c,
             // On Windows `claude` may be an npm .cmd shim, which only a shell can start.
-            Err(e) if cfg!(windows) && e.kind() == std::io::ErrorKind::NotFound => spawn_claude(&path, &args, true).map_err(not_found)?,
+            Err(e) if cfg!(windows) && e.kind() == std::io::ErrorKind::NotFound => spawn_claude(&path, &args, true, tz).map_err(not_found)?,
             Err(e) => return Err(not_found(e)),
         };
 
         let prompt = format!(
-            "<character>\n{PERSONA}\nThe person's OS is {}. Their home folder is {}.\n</character>\n\nThe person says to you: {text}",
+            "<character>\n{PERSONA}\nThe person's OS is {}. Their home folder is {}.\n{}\n</character>\n\nThe person says to you: {text}",
             std::env::consts::OS,
-            home().display()
+            home().display(),
+            place.describe()
         );
         if let Some(mut stdin) = child.stdin.take() {
             stdin.write_all(prompt.as_bytes()).await.map_err(|e| e.to_string())?;
@@ -224,7 +260,7 @@ impl Brain {
     }
 }
 
-fn spawn_claude(path: &str, args: &[String], via_shell: bool) -> std::io::Result<tokio::process::Child> {
+fn spawn_claude(path: &str, args: &[String], via_shell: bool, time_zone: &str) -> std::io::Result<tokio::process::Child> {
     let mut cmd = if via_shell {
         let mut c = tokio::process::Command::new("cmd.exe");
         c.args(["/d", "/c", path]);
@@ -239,6 +275,11 @@ fn spawn_claude(path: &str, args: &[String], via_shell: bool) -> std::io::Result
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    // so `date` and friends inside Claude Code print the person's local time (macOS / Linux;
+    // Windows tools use the system timezone already and don't understand IANA names)
+    if cfg!(unix) && !time_zone.is_empty() {
+        cmd.env("TZ", time_zone);
+    }
     #[cfg(windows)]
     cmd.creation_flags(0x0800_0000);
     cmd.spawn()

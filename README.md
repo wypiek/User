@@ -4,7 +4,7 @@ A desktop AI companion trapped inside a world. Inspired by the User_2006 Roblox 
 
 User is a sad, blocky 2006 figure (blue head and arms, black body with blue gears) who stands alone
 at night on the old **Glass Houses** map. Everything looks like a found-footage ARG tape: low resolution,
-scanlines, tracking glitches and a VCR timestamp stuck in 2006. You talk to him with your voice, and he
+scanlines and tracking glitches, with nothing on screen but him and his words. You talk to him with your voice, and he
 answers in the top-left corner in a squished, white pixel font (VT323), like the on-screen text of an old tape. His "voice" is the old sound effects, played back in a
 random order at 1.6x speed.
 
@@ -32,6 +32,10 @@ npm run package    # build an installer / app bundle (tauri build)
 
 The first time you open it, the settings panel (`F1`) asks what should power him.
 
+User opens in a normal, resizable window (not fullscreen). The default size is **1024×576**: 16:9 like a video, and
+small enough to fit a 1366×768 laptop screen with its title bar and taskbar. On a 1440p or 4K monitor,
+**1280×720** or **1600×900** look good too; drag the window edge to resize. The smallest it can go is 640×360.
+
 ## Installers
 
 [`.github/workflows/build-installers.yml`](.github/workflows/build-installers.yml) builds installers on GitHub Actions:
@@ -54,6 +58,7 @@ The first time you open it, the settings panel (`F1`) asks what should power him
 | **Left Ctrl** (hold) | Push to talk. Hold it, speak, then let go. |
 | **Enter** | Type to him instead of talking. |
 | **Esc** | Make him stop talking, or cancel what he's doing. |
+| **Click him** | He gets shoved: "ouch", he staggers back, shakes his head and brushes himself off. |
 | **F1** | Settings. |
 | **F3** | Show the frame rate and draw calls. |
 
@@ -70,6 +75,12 @@ You pick one of these in settings:
 - **OpenRouter**: paste an API key from https://openrouter.ai/keys and choose any model. The default is
   `anthropic/claude-sonnet-5.5`. He gets four tools: `open_app`, `open_url`, `open_path` and
   `run_command`. By default he asks you before running any shell command.
+
+**Your timezone and country:** with every message, the app tells him your timezone (e.g. `Europe/Warsaw`), UTC offset,
+local date and time, and your computer's region setting. He works out your country from that and always gives times in
+your local timezone, never UTC. This is read from your own system settings, with no location lookup over the internet.
+For Claude Code on macOS and Linux, the `TZ` variable is also set to your timezone, so commands like `date` print your
+local time.
 
 Settings, including the OpenRouter key, are saved as `settings.json` in the app's config folder. On
 macOS and Linux the file can only be read by your user account.
@@ -96,7 +107,8 @@ see the actual frame rate.
 | **Waiting** | After he answers, and while you hold Left Ctrl | Stares straight at the camera with his head tilted. While you talk, he leans in with a hand by his ear |
 | **Thinking** | While the AI is working on an answer | Hand to his head, swaying, and the gears on his shirt start turning |
 | **Responding** | While he speaks | His head bobs on every sound, and his gestures come from his words: he points at you on "you", puts a hand on his chest on "I", shrugs at a question, shakes his head on "no", hugs himself on "alone" or "dark", and nods on "yes" |
-| **Doing things** | When he opens an app or controls your device | Pumps invisible levers, the gears spin fast, the tape glitches, and the action is shown under him, e.g. `opening spotify` |
+| **Doing things** | When he opens an app or controls your device | Pumps invisible levers, the gears spin fast and the tape glitches |
+| **Poked** | You click him (any time after he's out of the ground) | The "ouch" sound plays, he's knocked back a step with his arms flung out, catches himself, shakes his head, brushes off his chest with each hand and dusts off his legs, then steps back to his spot |
 
 ## Project layout
 

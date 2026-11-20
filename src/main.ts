@@ -1,4 +1,5 @@
 // User — frontend: wires the world, the character, his voice, his ears and his brain (Rust).
+import * as THREE from 'three';
 import { World } from './scene';
 import { loadCharacter, type Character } from './character';
 import { Voice } from './voice';
@@ -8,9 +9,8 @@ import { bridge, type Settings } from './bridge';
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
 const ui = {
-  caption: $('caption'), status: $('status'), heard: $('heard'), doing: $('doing'),
-  typebox: $<HTMLInputElement>('typebox'), settings: $('settings'), boot: $('boot'), bootDetail: $('boot-detail'),
-  clock: $('clock'), counter: $('counter'),
+  caption: $('caption'), typebox: $<HTMLInputElement>('typebox'), settings: $('settings'),
+  boot: $('boot'), bootDetail: $('boot-detail'),
 };
 
 type Mode = 'booting' | 'summon' | 'idle' | 'listening' | 'transcribing' | 'thinking' | 'doing' | 'responding' | 'waiting';
@@ -53,7 +53,6 @@ async function boot() {
 
 function summon() {
   mode = 'summon';
-  setStatus('');
   user.setState('summon', { force: true });
   world.glitch = 0.5;
   summonStartedAt = performance.now();
@@ -73,7 +72,6 @@ function summon() {
 function afterSummon() {
   mode = 'idle';
   user.setState('idle');
-  readyStatus();
   preloadEars();
   if (!settings.setupDone) setTimeout(openSettings, 600);
 }
@@ -81,33 +79,9 @@ function afterSummon() {
 function preloadEars() {
   sttReady = false;
   sttError = null;
-  const files: Record<string, number> = {};
-  loadSTT(settings.sttModel, (p) => {
-    if (p.status === 'progress' && p.file) {
-      files[p.file] = p.progress ?? 0;
-      const vals = Object.values(files);
-      const pct = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
-      if (mode === 'idle' || mode === 'waiting') {
-        if (pct < 100) setStatus(`loading speech model ${pct}%`);
-        else readyStatus();
-      }
-    }
-  })
-    .then(() => { sttReady = true; if (mode === 'idle' || mode === 'waiting') readyStatus(); })
-    .catch((e) => {
-      sttError = e;
-      console.error('speech model failed', e);
-      if (mode === 'idle' || mode === 'waiting') readyStatus();
-    });
-}
-
-function readyStatus() {
-  setStatus(sttError ? 'speech unavailable, press enter to type' : 'hold left ctrl to talk');
-}
-
-function setStatus(text: string, cls = '') {
-  ui.status.textContent = text;
-  ui.status.className = cls;
+  loadSTT(settings.sttModel)
+    .then(() => { sttReady = true; })
+    .catch((e) => { sttError = e; console.error('speech model failed', e); });
 }
 
 // ------------------------------------------------------------------ loop
@@ -133,29 +107,14 @@ function startLoop() {
     fpsFrames++;
   };
   requestAnimationFrame(frame);
-  setInterval(updateOSD, 250);
   setInterval(() => {
     if (showFps) $('fps').textContent = `${fpsFrames} fps · ${world.renderer.info.render.calls} draw calls`;
     fpsFrames = 0;
   }, 1000);
-  updateOSD();
 }
 
 let fpsFrames = 0;
 let showFps = false;
-
-const started = Date.now();
-function updateOSD() {
-  const d = new Date();
-  const mon = d.toLocaleString('en-US', { month: 'short' }).toUpperCase();
-  let h = d.getHours();
-  const ap = h >= 12 ? 'PM' : 'AM';
-  h = h % 12 || 12;
-  const pad = (n: number) => String(n).padStart(2, '0');
-  ui.clock.textContent = `${ap} ${h}:${pad(d.getMinutes())}:${pad(d.getSeconds())}  ${mon}. ${pad(d.getDate())} 2006`;
-  const s = Math.floor((Date.now() - started) / 1000);
-  ui.counter.textContent = `${Math.floor(s / 3600)}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}`;
-}
 
 // ------------------------------------------------------------------ states
 function setMode(m: Mode) {
@@ -163,17 +122,16 @@ function setMode(m: Mode) {
   clearTimeout(idleTimer);
   user.ctx.listening = m === 'listening';
   switch (m) {
-    case 'listening': user.setState('waiting', { force: true }); setStatus('listening', 'listening'); break;
-    case 'transcribing': user.setState('waiting'); setStatus(''); break;
-    case 'thinking': user.setState('thinking'); setStatus(''); break;
-    case 'doing': user.setState('doing'); setStatus(''); break;
-    case 'responding': user.setState('responding'); setStatus(''); break;
+    case 'listening': user.setState('waiting', { force: true }); break;
+    case 'transcribing': user.setState('waiting'); break;
+    case 'thinking': user.setState('thinking'); break;
+    case 'doing': user.setState('doing'); break;
+    case 'responding': user.setState('responding'); break;
     case 'waiting':
       user.setState('waiting', { force: true });
-      readyStatus();
       idleTimer = window.setTimeout(() => setMode('idle'), 15000);
       break;
-    case 'idle': user.setState('idle'); readyStatus(); break;
+    case 'idle': user.setState('idle'); break;
     default: break;
   }
 }
@@ -184,16 +142,10 @@ const busy = () => (['thinking', 'doing', 'transcribing', 'summon', 'booting'] a
 async function handleUserText(raw: string) {
   const text = raw.trim();
   if (!text) return setMode('waiting');
-  ui.heard.textContent = text;
-  ui.doing.textContent = '';
   setMode('thinking');
   const res = await bridge.ask(text, (ev) => {
-    if (ev.type === 'doing' && (mode === 'thinking' || mode === 'doing')) {
-      ui.doing.textContent = ev.label;
-      setMode('doing');
-    }
+    if (ev.type === 'doing' && (mode === 'thinking' || mode === 'doing')) setMode('doing');
   });
-  ui.doing.textContent = '';
   if (mode !== 'thinking' && mode !== 'doing') return; // cancelled
   if (!res.ok) return say(`...something is wrong. ${res.error}`);
   return say(shorten(cleanReply(res.text)));
@@ -246,7 +198,7 @@ async function say(text: string) {
 
 // ------------------------------------------------------------------ push to talk: LEFT CONTROL
 async function startListening() {
-  if (busy()) { flashStatus(mode === 'summon' ? '' : 'esc to stop him'); return; }
+  if (busy()) return;
   voice.stop();
   ptt = { down: true, combo: false, recording: false };
   setMode('listening');
@@ -256,8 +208,8 @@ async function startListening() {
     if (!ptt.down) { await bridge.micCancel(); ptt.recording = false; setMode('waiting'); } // released before the mic opened
   } catch (e) {
     ptt.down = false;
-    setMode('waiting');
-    flashStatus(`no microphone: ${e}`);
+    console.error('microphone', e);
+    void say("...i can't hear you. there's no microphone.");
   }
 }
 
@@ -268,30 +220,41 @@ async function finishListening() {
   ptt.recording = false;
   if (ptt.combo) { await bridge.micCancel(); setMode('waiting'); return; }
   setMode('transcribing');
-  if (!sttReady && !sttError) setStatus('loading speech model');
   try {
     const pcm = await bridge.micStop();
     const text = await transcribe(pcm, settings.sttModel);
-    if (!text) { setMode('waiting'); flashStatus("didn't catch that"); return; }
+    if (!text) { void say('...what? i didn\'t hear anything.'); return; }
     await handleUserText(text);
   } catch (e) {
     console.error(e);
-    setMode('waiting');
-    flashStatus(`couldn't transcribe: ${e}`);
+    void say(sttReady && !sttError ? '...the static ate your words. try again.' : "...my ears aren't working. type to me instead.");
   }
-}
-
-let flashTimer: number | undefined;
-function flashStatus(text: string) {
-  setStatus(text);
-  clearTimeout(flashTimer);
-  flashTimer = window.setTimeout(() => { if (mode === 'idle' || mode === 'waiting') readyStatus(); }, 3500);
 }
 
 function stopHim() {
   if (mode === 'responding') { voice.stop(); setMode('waiting'); }
-  else if (mode === 'thinking' || mode === 'doing') { void bridge.cancel(); ui.doing.textContent = ''; void say('...fine.'); }
+  else if (mode === 'thinking' || mode === 'doing') { void bridge.cancel(); void say('...fine.'); }
 }
+
+// ------------------------------------------------------------------ clicking him
+const pointer = new THREE.Vector2();
+const ray = new THREE.Raycaster();
+function overUser(e: PointerEvent | MouseEvent): boolean {
+  if (!user || !world) return false;
+  const r = world.renderer.domElement.getBoundingClientRect();
+  pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(pointer, world.camera);
+  return user.hitBy(ray);
+}
+const stage = $<HTMLCanvasElement>('stage');
+stage.addEventListener('pointermove', (e) => { stage.style.cursor = mode !== 'summon' && overUser(e) ? 'pointer' : ''; });
+stage.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0 || !overUser(e)) return;
+  voice.resume();
+  if (!user.poke()) return;
+  voice.play('ouch', { rate: 1, gain: 1 });
+  world.glitch = Math.max(world.glitch, 0.6); // the tape jolts
+});
 
 window.addEventListener('keydown', (e) => {
   voice?.resume();
@@ -365,10 +328,8 @@ $('gear').addEventListener('click', openSettings);
 $('cancelSettings').addEventListener('click', () => { voice?.setVolumes(settings.voiceVolume, settings.ambienceVolume); closeSettings(); });
 $('forget').addEventListener('click', async () => {
   await bridge.reset();
-  ui.heard.textContent = '';
-  ui.caption.innerHTML = '';
+  ui.caption.textContent = '';
   closeSettings();
-  flashStatus('conversation cleared');
 });
 $('saveSettings').addEventListener('click', async () => {
   const next: Record<string, unknown> = {
@@ -384,13 +345,15 @@ $('saveSettings').addEventListener('click', async () => {
   try {
     settings = await bridge.setSettings(next as Partial<Settings>);
   } catch (e) {
-    flashStatus(`could not save settings: ${e}`);
+    console.error('could not save settings', e);
+    const btn = $('saveSettings');
+    btn.textContent = 'Could not save';
+    setTimeout(() => { btn.textContent = 'Save'; }, 2500);
     return;
   }
   voice?.setVolumes(settings.voiceVolume, settings.ambienceVolume);
   closeSettings();
   if (sttChanged) preloadEars();
-  if (settings.provider === 'openrouter' && !settings.openrouterKey) flashStatus('add an openrouter key in settings');
 });
 
 boot().catch((e) => {
