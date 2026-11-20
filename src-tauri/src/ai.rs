@@ -154,11 +154,13 @@ impl Brain {
         let model = if s.openrouter_model.trim().is_empty() { "anthropic/claude-sonnet-5.5" } else { s.openrouter_model.trim() };
         let client = reqwest::Client::builder().timeout(Duration::from_secs(120)).build().map_err(|e| e.to_string())?;
 
-        for _ in 0..8 {
+        let mut use_tools = s.device_control;
+        let mut retried = false;
+        for _ in 0..10 {
             let mut messages = vec![json!({ "role": "system", "content": system })];
             messages.extend(work.iter().cloned());
             let mut body = json!({ "model": model, "messages": messages, "max_tokens": 400 });
-            if s.device_control {
+            if use_tools {
                 body["tools"] = device::tool_defs();
             }
             let res = client
@@ -173,12 +175,20 @@ impl Brain {
             let status = res.status();
             let data: Value = res.json().await.unwrap_or(Value::Null);
             if !status.is_success() || data.get("error").is_some() {
-                self.history.lock().await.pop();
-                if status.as_u16() == 401 {
-                    return Err("openrouter rejected the key.".into());
+                let err = openrouter_error(status, &data, model);
+                // this model can't use tools: talk without them (he just can't control the device)
+                if use_tools && err.to_lowercase().contains("tool") {
+                    use_tools = false;
+                    continue;
                 }
-                let msg = data["error"]["message"].as_str().map(String::from).unwrap_or_else(|| format!("HTTP {status}"));
-                return Err(format!("openrouter: {msg}"));
+                // a one-off hiccup at the provider: try once more
+                if !retried && (status.is_server_error() || status.as_u16() == 429 || err.contains("Provider returned error")) {
+                    retried = true;
+                    tokio::time::sleep(Duration::from_millis(800)).await;
+                    continue;
+                }
+                self.history.lock().await.pop();
+                return Err(err);
             }
             let msg = &data["choices"][0]["message"];
             let calls = msg["tool_calls"].as_array().cloned().unwrap_or_default();
@@ -189,12 +199,14 @@ impl Brain {
                 self.history.lock().await.push(json!({ "role": "assistant", "content": reply }));
                 return Ok(reply);
             }
-            work.push(json!({ "role": "assistant", "content": msg["content"].as_str().unwrap_or(""), "tool_calls": calls }));
+            let text = msg["content"].as_str().unwrap_or("").trim();
+            work.push(json!({ "role": "assistant", "content": if text.is_empty() { Value::Null } else { json!(text) }, "tool_calls": calls }));
             for call in &calls {
                 let name = call["function"]["name"].as_str().unwrap_or("");
                 let args: Value = call["function"]["arguments"].as_str().and_then(|a| serde_json::from_str(a).ok()).unwrap_or(json!({}));
                 emit(AiEvent::Doing { label: device::describe(name, &args) });
                 let result = device::run_tool(app, name, &args, s).await;
+                let result = if result.trim().is_empty() { "(done, no output)".to_string() } else { result };
                 work.push(json!({ "role": "tool", "tool_call_id": call["id"], "content": result }));
             }
         }
@@ -217,15 +229,10 @@ impl Brain {
         } else {
             args.extend(["--disallowedTools".into(), "Bash,Edit,Write".into()]);
         }
-        let path = if s.claude_path.trim().is_empty() { "claude".to_string() } else { s.claude_path.trim().to_string() };
+        let path = crate::locate::find_claude(&s.claude_path).ok_or_else(|| not_installed(&s.claude_path))?;
 
         let tz = place.time_zone.as_str();
-        let mut child = match spawn_claude(&path, &args, false, tz) {
-            Ok(c) => c,
-            // On Windows `claude` may be an npm .cmd shim, which only a shell can start.
-            Err(e) if cfg!(windows) && e.kind() == std::io::ErrorKind::NotFound => spawn_claude(&path, &args, true, tz).map_err(not_found)?,
-            Err(e) => return Err(not_found(e)),
-        };
+        let mut child = spawn_claude(&path, &args, tz).map_err(not_found)?;
 
         let prompt = format!(
             "<character>\n{PERSONA}\nThe person's OS is {}. Their home folder is {}.\n{}\n</character>\n\nThe person says to you: {text}",
@@ -295,16 +302,20 @@ impl Brain {
     }
 }
 
-fn spawn_claude(path: &str, args: &[String], via_shell: bool, time_zone: &str) -> std::io::Result<tokio::process::Child> {
+fn spawn_claude(path: &std::path::Path, args: &[String], time_zone: &str) -> std::io::Result<tokio::process::Child> {
+    // npm installs `claude.cmd` on Windows, which only cmd.exe can run
+    let via_shell = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"));
     let mut cmd = if via_shell {
         let mut c = tokio::process::Command::new("cmd.exe");
-        c.args(["/d", "/c", path]);
+        c.arg("/d").arg("/c").arg(path);
         c
     } else {
         tokio::process::Command::new(path)
     };
     cmd.args(args)
         .current_dir(home())
+        // the fuller search path, so Claude Code (and node, git... that it runs) are found
+        .env("PATH", crate::locate::search_path())
         .env_remove("CLAUDECODE") // don't look like a nested Claude Code session
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -339,8 +350,7 @@ async fn complete_openrouter(prompt: &str, s: &Settings) -> Result<String, Strin
     let status = res.status();
     let data: Value = res.json().await.unwrap_or(Value::Null);
     if !status.is_success() || data.get("error").is_some() {
-        let msg = data["error"]["message"].as_str().map(String::from).unwrap_or_else(|| format!("HTTP {status}"));
-        return Err(format!("openrouter: {msg}"));
+        return Err(openrouter_error(status, &data, model));
     }
     Ok(data["choices"][0]["message"]["content"].as_str().unwrap_or("").to_string())
 }
@@ -355,12 +365,8 @@ async fn complete_claude_code(prompt: &str, s: &Settings) -> Result<String, Stri
     if !s.claude_model.trim().is_empty() {
         args.extend(["--model".into(), s.claude_model.trim().into()]);
     }
-    let path = if s.claude_path.trim().is_empty() { "claude".to_string() } else { s.claude_path.trim().to_string() };
-    let mut child = match spawn_claude(&path, &args, false, "") {
-        Ok(c) => c,
-        Err(e) if cfg!(windows) && e.kind() == std::io::ErrorKind::NotFound => spawn_claude(&path, &args, true, "").map_err(not_found)?,
-        Err(e) => return Err(not_found(e)),
-    };
+    let path = crate::locate::find_claude(&s.claude_path).ok_or_else(|| not_installed(&s.claude_path))?;
+    let mut child = spawn_claude(&path, &args, "").map_err(not_found)?;
     if let Some(mut stdin) = child.stdin.take() {
         stdin.write_all(prompt.as_bytes()).await.map_err(|e| e.to_string())?;
     }
@@ -388,6 +394,48 @@ fn extract_svg(text: &str) -> Result<String, String> {
     Ok(text[start..end].to_string())
 }
 
+/// OpenRouter's errors, readable. Its generic "Provider returned error" hides the real reason
+/// in error.metadata.raw, so that's dug out and shown too.
+fn openrouter_error(status: reqwest::StatusCode, data: &Value, model: &str) -> String {
+    let e = &data["error"];
+    let msg = e["message"].as_str().unwrap_or("").trim().to_string();
+    let provider = e["metadata"]["provider_name"].as_str().unwrap_or("");
+    let raw = match &e["metadata"]["raw"] {
+        Value::String(r) => serde_json::from_str::<Value>(r)
+            .ok()
+            .and_then(|v| v["error"]["message"].as_str().or(v["message"].as_str()).or(v["error"].as_str()).map(String::from))
+            .unwrap_or_else(|| r.clone()),
+        Value::Null => String::new(),
+        other => other["error"]["message"].as_str().or(other["message"].as_str()).map(String::from).unwrap_or_else(|| other.to_string()),
+    };
+    let raw: String = raw.trim().chars().take(220).collect();
+    match status.as_u16() {
+        401 => "openrouter rejected the key. check it in settings (F1).".into(),
+        402 => "the openrouter key has no credits left.".into(),
+        404 if !msg.to_lowercase().contains("tool") && (msg.is_empty() || msg.to_lowercase().contains("model") || msg.starts_with("No endpoints found for")) => format!("openrouter doesn't have the model \"{model}\". pick another one in settings (F1)."),
+        429 => "openrouter says too many requests. wait a moment.".into(),
+        _ => {
+            let mut out = format!("openrouter: {}", if msg.is_empty() { format!("HTTP {status}") } else { msg });
+            if !provider.is_empty() {
+                out.push_str(&format!(" ({provider})"));
+            }
+            if !raw.is_empty() && !out.contains(&raw) {
+                out.push_str(&format!(": {raw}"));
+            }
+            out
+        }
+    }
+}
+
+fn not_installed(configured: &str) -> String {
+    let c = configured.trim();
+    if c.is_empty() || c == "claude" {
+        "i can't find claude code. i looked everywhere it usually lives. put its full path in settings (F1) - run 'which claude' (or 'where claude' on windows) in a terminal to see it.".into()
+    } else {
+        format!("i can't find claude code at {c}. check the path in settings (F1).")
+    }
+}
+
 fn not_found(e: std::io::Error) -> String {
     if e.kind() == std::io::ErrorKind::NotFound {
         "claude code was not found. install it, or set its path / switch to openrouter in settings (F1).".into()
@@ -408,5 +456,23 @@ fn describe_claude_tool(name: &str, input: &Value) -> String {
         "WebSearch" => format!("searching {}", cut(st("query"))),
         "Glob" | "Grep" => "searching files".into(),
         other => other.to_lowercase(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn openrouter_errors_show_the_real_reason() {
+        let generic = json!({ "error": { "message": "Provider returned error", "code": 400, "metadata": {
+            "raw": "{\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"messages.1.content.0.text: text content blocks must be non-empty\"}}",
+            "provider_name": "Anthropic" } } });
+        let e = openrouter_error(reqwest::StatusCode::BAD_REQUEST, &generic, "anthropic/claude-sonnet-5.5");
+        assert_eq!(e, "openrouter: Provider returned error (Anthropic): messages.1.content.0.text: text content blocks must be non-empty");
+        let no_credits = json!({ "error": { "message": "Insufficient credits", "code": 402 } });
+        assert!(openrouter_error(reqwest::StatusCode::PAYMENT_REQUIRED, &no_credits, "x").contains("no credits"));
+        let no_model = json!({ "error": { "message": "No endpoints found for x/y.", "code": 404 } });
+        assert!(openrouter_error(reqwest::StatusCode::NOT_FOUND, &no_model, "x/y").contains("doesn't have the model"));
     }
 }

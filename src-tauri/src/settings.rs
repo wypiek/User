@@ -19,6 +19,8 @@ pub struct Settings {
     /// ask before User runs shell commands (OpenRouter mode)
     pub confirm_commands: bool,
     pub stt_model: String,
+    /// microphone for push-to-talk ("" = the system default)
+    pub mic_device: String,
     pub voice_volume: f64,
     pub ambience_volume: f64,
     pub setup_done: bool,
@@ -35,6 +37,7 @@ impl Default for Settings {
             device_control: true,
             confirm_commands: true,
             stt_model: "onnx-community/whisper-base.en".into(),
+            mic_device: String::new(),
             voice_volume: 0.9,
             ambience_volume: 0.35,
             setup_done: false,

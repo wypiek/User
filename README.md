@@ -5,11 +5,8 @@ A desktop AI companion trapped inside a world. Inspired by the User_2006 Roblox 
 User is a sad, blocky 2006 figure (blue head and arms, black body with blue gears) who stands alone
 at night on the old **Glass Houses** map. Everything looks like a found-footage ARG tape: low resolution,
 scanlines and tracking glitches, with nothing on screen but him and his words. You talk to him with your voice, and he
-answers in the top-left corner in a squished, white pixel font (VT323), like the on-screen text of an old tape. His "voice" is 22 old-game sound effects played back in a
-random order at 1.6x speed. Six are the originals; the other 16 (boing, swoosh, slingshot twang, button click, bloop,
-bell ding, zap, pop, thud, squeak, bonk, rocket, chime and three buzzy "oh / eh / uh" syllables) are synthesized
-from scratch in the same 2006 style by [`scripts/make-sounds.py`](scripts/make-sounds.py). Run
-`python3 scripts/make-sounds.py` (needs numpy and ffmpeg) to regenerate them.
+answers in the top-left corner in a squished, white pixel font (VT323), like the on-screen text of an old tape. His "voice" is the old sound effects, played back in a
+random order at 1.6x speed.
 
 ## Stack
 
@@ -75,6 +72,10 @@ You pick one of these in settings:
   https://claude.com/claude-code and run `claude` once to log in. User keeps one ongoing Claude Code
   session, so he remembers the conversation. If device control is on, he can run commands and edit
   files through Claude Code's own tools (Bash, Read, Write, Edit, and web search/fetch).
+  The app finds `claude` even when it isn't on the PATH an app gets from the Dock or Start menu: it uses your login
+  shell's PATH and checks the usual install folders (`~/.local/bin`, `~/.claude/local`, Homebrew, npm's global
+  folder, nvm, volta, bun). If it still can't find it, put the full path in **Path to claude** in settings
+  (`which claude` or `where claude` in a terminal shows it).
 - **OpenRouter**: paste an API key from https://openrouter.ai/keys and choose any model. The default is
   `anthropic/claude-sonnet-5.5`. He gets four tools: `open_app`, `open_url`, `open_path` and
   `run_command`. By default he asks you before running any shell command.
@@ -95,6 +96,10 @@ the frontend. There, Whisper (through `transformers.js`) turns it into text **on
 the same with both backends and needs no API key. The first time it runs, it downloads the model from
 Hugging Face (about 80 MB for the default `whisper-base.en`) and caches it. After that it works
 offline. You can switch to `tiny` (faster) or `small` (more accurate) in settings.
+
+Pick which microphone to use under **Sound → Microphone** in settings (`F1`). The list refreshes each time you open
+settings; **System default** follows your OS setting, and if a chosen microphone is unplugged it falls back to the
+default.
 
 ## Drawing
 
@@ -153,8 +158,7 @@ src/main.ts                 state machine, push to talk, captions, settings UI
 src/scene.ts                Glass Houses at night, the camera on User, VHS post-processing
 src/character.ts            rebuilds the 2006 figure into a rig: sad face, gear shirt, choppy animations
 src/paint.ts                userpaint: traces the AI's drawing by hand onto the notebook page
-src/voice.ts                the sound-effect voice (22 sounds, random order, 1.6x) and the night ambience
-scripts/make-sounds.py      synthesizes the 16 extra 2006-style voice sounds
+src/voice.ts                the sound-effect voice (random order, 1.6x) and the night ambience
 src/stt.ts                  Whisper speech-to-text
 src/bridge.ts               typed wrappers around the Rust commands
 src/styles.css              HUD, captions, settings
