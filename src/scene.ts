@@ -163,7 +163,6 @@ export class World {
   private moonSprite: THREE.Sprite | null = null;
   private composer: EffectComposer;
   private vhs: ShaderPass;
-  private shakeStep = -1;
 
   constructor(private canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
@@ -249,15 +248,16 @@ export class World {
   }
 
   render(time: number): void {
-    // handheld camera that only moves in little jumps
-    const step = Math.floor(time * (this.shake > 0.05 ? 15 : 4));
-    if (step !== this.shakeStep) {
-      this.shakeStep = step;
-      const r = (k: number) => (Math.sin(step * 12.9898 + k * 78.233) * 43758.5453) % 1;
-      const amp = 1 + this.shake * 5;
-      this.camera.position.copy(this.camBase).add(new THREE.Vector3(r(1) * 0.05 * amp, r(2) * 0.05 * amp, r(3) * 0.03));
-      this.camera.lookAt(this.lookAt);
-    }
+    // handheld camera: a slow, smooth drift every frame (only User himself is choppy),
+    // plus a fast rumble while the ground breaks open during the summon
+    const n = (f: number, ph: number) => Math.sin(time * f + ph) * 0.6 + Math.sin(time * f * 2.37 + ph * 1.7) * 0.4;
+    const r = this.shake * 0.12;
+    this.camera.position.copy(this.camBase).add(new THREE.Vector3(
+      n(0.55, 1) * 0.05 + n(31, 4) * r,
+      n(0.43, 2) * 0.04 + n(37, 5) * r,
+      n(0.31, 3) * 0.03,
+    ));
+    this.camera.lookAt(this.lookAt);
     this.renderer.info.reset();
     this.vhs.uniforms.time.value = time;
     this.vhs.uniforms.glitch.value = this.glitch;

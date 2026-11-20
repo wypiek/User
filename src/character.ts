@@ -460,7 +460,7 @@ class GroundBreak {
     }
   }
 
-  /** Called on animation steps only, so the dirt moves as choppily as he does. */
+  /** Called every rendered frame: the dirt is the world, not User, so it moves smoothly. */
   step(dt: number, summonTime: number | null) {
     for (const c of this.chunks) {
       c.v.y -= 22 * dt;
@@ -572,7 +572,11 @@ export class Character {
     const key = this.state === 'waiting' && this.ctx.listening ? 'listening' : this.state;
     if (key !== this.baseKey) { this.baseKey = key; this.beginBlend(); this.action = null; }
 
-    // ---- stop-motion stepping at 15 fps
+    // ---- the world around him (hole, flying dirt) moves smoothly every frame
+    this.ground.step(Math.min(0.1, t - this.lastStepTime), this.state === 'summon' ? t - this.stateStart : null);
+    this.lastStepTime = t;
+
+    // ---- stop-motion stepping at 15 fps (User himself)
     const step = Math.floor(t * ANIM_FPS);
     if (step === this.lastStep) return; // hold the frame
     this.lastStep = step;
@@ -625,8 +629,7 @@ export class Character {
         this.ground.burst(x, count);
       }
     }
-    this.ground.step(Math.min(0.2, t - this.lastStepTime), summonT);
-    this.lastStepTime = t;
+
 
     // gears turn in jerky ticks while he thinks / works
     if (this.state === 'doing') this.shirt.turn(0.35);
