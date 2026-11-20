@@ -5,7 +5,7 @@ A desktop AI companion trapped inside a world. Inspired by the User_2006 Roblox 
 User is a sad, blocky 2006 figure (blue head and arms, black body with blue gears) who stands alone
 at night on the old **Glass Houses** map. Everything looks like a found-footage ARG tape: low resolution,
 scanlines, tracking glitches and a VCR timestamp stuck in 2006. You talk to him with your voice, and he
-answers in plain white Comic Sans in the top-left corner (Comic Neue is bundled for systems that don't have Comic Sans). His "voice" is the old sound effects, played back in a
+answers in the top-left corner in a squished, white pixel font (VT323), like the on-screen text of an old tape. His "voice" is the old sound effects, played back in a
 random order at 1.6x speed.
 
 ## Stack
@@ -31,6 +31,21 @@ npm run package    # build an installer / app bundle (tauri build)
 ```
 
 The first time you open it, the settings panel (`F1`) asks what should power him.
+
+## Installers
+
+[`.github/workflows/build-installers.yml`](.github/workflows/build-installers.yml) builds installers on GitHub Actions:
+
+| Platform | File | Notes |
+| --- | --- | --- |
+| Windows (x64) | `User_<version>_x64-setup.exe`, `User_<version>_x64_en-US.msi` | Installs WebView2 if it's missing |
+| macOS (Universal: Apple Silicon + Intel) | `User_<version>_universal.dmg` | Ad-hoc signed, not notarized: the first time, right-click the app and choose **Open** |
+| Linux (x86_64 and arm64) | `User_<version>_amd64.AppImage`, `User_<version>_aarch64.AppImage` | Bundles GStreamer so his voice plays on any distro. Run `chmod +x` on the file, then start it |
+
+- **Pull requests to `main`** and **manual runs** (Actions → Build installers → Run workflow) upload the installers as
+  workflow artifacts.
+- **Pushing a version tag** (e.g. `git tag v2.1.0 && git push origin v2.1.0`) also attaches them to a draft GitHub
+  Release, so you can review it before publishing.
 
 ## Controls
 

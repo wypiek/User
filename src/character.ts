@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 
 const BLUE = 0x0000ff;
-const BLACK = 0x050507;
+const BLACK = 0x000000;
 const ANIM_FPS = 15; // every pose updates at 15 fps; the choppiness comes from holds, drops and jitter
 const UNIT = 0.01; // FBX units -> studs (the figure is ~5 studs tall, like in 2006)
 
@@ -164,7 +164,8 @@ export async function loadCharacter(url: string): Promise<Character> {
   const p = bakeParts(fbx);
 
   const matBlue = new THREE.MeshLambertMaterial({ color: BLUE });
-  const matBlack = new THREE.MeshLambertMaterial({ color: BLACK });
+  // truly black: unlit, so the blue night light can't tint it navy (only the blue rim shows, like the photo)
+  const matBlack = new THREE.MeshBasicMaterial({ color: BLACK, fog: false });
   const matFace = new THREE.MeshLambertMaterial({ map: makeFaceTexture(), polygonOffset: true, polygonOffsetFactor: -1 });
   const shirt = new GearShirt();
   const matShirt = new THREE.MeshLambertMaterial({ map: shirt.texture, transparent: true, alphaTest: 0.1, polygonOffset: true, polygonOffsetFactor: -2 });

@@ -1,6 +1,4 @@
 @font-face { font-family: 'VT323'; src: url('/assets/fonts/vt323.woff2') format('woff2'); }
-/* free fallback for systems without Comic Sans (e.g. most Linux installs) */
-@font-face { font-family: 'Comic Neue'; src: url('/assets/fonts/comic-neue.woff2') format('woff2'); }
 
 :root {
   --text: #fff;
@@ -13,12 +11,17 @@
 html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color: var(--text); font-family: var(--ui); user-select: none; }
 #stage { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; image-rendering: pixelated; }
 
-/* ---- his words: top-left, plain white Comic Sans ---- */
+/* ---- his words: top-left, a squished pixel font like an old tape's on-screen text ---- */
 #caption {
-  position: fixed; top: 4vh; left: 3.5vw; max-width: min(58vw, 760px);
-  font-family: 'Comic Sans MS', 'Comic Sans', 'Comic Neue', cursive;
-  font-size: clamp(18px, 2.4vw, 32px); line-height: 1.3;
+  --squish: 0.72;
+  position: fixed; top: 4vh; left: 3.5vw;
+  /* the text is squeezed horizontally, so give it proportionally more room to wrap in */
+  max-width: calc(min(58vw, 760px) / var(--squish));
+  font-family: 'VT323', monospace;
+  font-size: clamp(24px, 3.4vw, 46px); line-height: 0.95; letter-spacing: 0.02em;
   color: #fff;
+  transform: scaleX(var(--squish)); transform-origin: top left;
+  -webkit-font-smoothing: none; font-smooth: never;
   white-space: pre-wrap; pointer-events: none;
   transition: opacity 1s;
 }
@@ -35,7 +38,11 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color:
 @keyframes blink { 50% { opacity: 0.25; } }
 
 /* ---- status / input ---- */
-#hud { position: fixed; left: 50%; bottom: 11vh; transform: translateX(-50%); width: min(80vw, 640px); text-align: center; pointer-events: none; font-size: 13px; }
+#hud {
+  position: fixed; left: 50%; bottom: 11vh; transform: translateX(-50%) scaleX(0.78); width: calc(min(80vw, 640px) / 0.78);
+  text-align: center; pointer-events: none; font-family: 'VT323', monospace; font-size: 20px; line-height: 1.05; letter-spacing: 0.03em;
+  -webkit-font-smoothing: none;
+}
 #status { color: var(--dim); }
 #status.listening { color: var(--text); }
 #heard, #doing { color: var(--dim); min-height: 1.4em; }
@@ -43,7 +50,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color:
 #typebox {
   display: none; pointer-events: auto; margin: 10px auto 0; width: 100%;
   background: transparent; border: 0; border-bottom: 1px solid var(--line); color: var(--text);
-  font: inherit; font-size: 15px; padding: 6px 2px; outline: none; text-align: center;
+  font: inherit; font-size: 22px; padding: 4px 2px; outline: none; text-align: center;
 }
 #typebox.open { display: block; }
 
