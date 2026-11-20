@@ -487,8 +487,9 @@ const DRAW = {
   drawToss: C({ len: 2.6, keys: [
     [0, { ...NOTE_SHOW, noteFlip: 0, ...BOTH_HOLD, penOn: 0, headX: -0.05, headZ: 0.2, torsoX: 0.04, bodyY: 0 }],
     [0.25, { noteY: 90, noteZ: 120, armLX: -0.8, armRX: -0.8, armLZ: -0.55, armRZ: 0.55, torsoX: 0.2, headX: 0.3, bodyY: -6 }], // wind up
-    [0.45, { noteY: 420, noteZ: 160, noteSpin: 2.5, armLX: -2.9, armRX: -2.9, armLZ: -0.1, armRZ: 0.1, torsoX: -0.1, headX: -0.4, bodyY: 4 }], // throw!
-    [0.75, { noteY: 620, noteSpin: 5 }],
+    // (it bursts at about 6 studs up: high above his head, but still inside the camera's view)
+    [0.45, { noteY: 330, noteZ: 160, noteSpin: 2.5, armLX: -2.9, armRX: -2.9, armLZ: -0.1, armRZ: 0.1, torsoX: -0.1, headX: -0.4, bodyY: 4 }], // throw!
+    [0.75, { noteY: 430, noteSpin: 5 }],
     [0.8, { noteOn: 0 }],
     [1.3, { armLX: -0.3, armRX: -0.3, armLZ: 0.1, armRZ: -0.1, headX: -0.5, bodyY: 0, torsoX: 0 }], // watches the scraps fall
     [2.0, { armLX: 0, armRX: 0, armLZ: 0.06, armRZ: -0.06, headX: 0.45, headZ: 0.15, torsoX: 0.1 }], // looks down
