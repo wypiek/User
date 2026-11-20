@@ -70,8 +70,9 @@ offline. You can switch to `tiny` (faster) or `small` (more accurate) in setting
 ## Animations
 
 All of them run at 15 fps but stay choppy on purpose: frames are sometimes dropped, a pose sometimes
-sticks for a few frames before snapping ahead, and every frame has a little jitter. The scene renders at
-30 fps, so each pose lasts exactly two frames.
+sticks for a few frames before snapping ahead, and every frame has a little jitter. Only User is choppy:
+the app itself renders as fast as your display refreshes (60 fps and up), capped at 240 fps. Press F3 to
+see the actual frame rate.
 
 | State | When | What he does |
 | --- | --- | --- |

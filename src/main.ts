@@ -114,23 +114,21 @@ function setStatus(text: string, cls = '') {
 function startLoop() {
   const t0 = performance.now();
   let last = t0;
-  let acc = 0;
-  // 30 fps: an even multiple of his 15 fps animation, so every pose lasts exactly 2 frames
-  const FRAME = 1 / 30;
+  // The app renders as fast as the display refreshes (60 Hz and up), capped at 240 fps.
+  // Only User himself is choppy: his poses still step at 15 fps (see character.ts).
+  const MIN_FRAME_MS = 1000 / 240;
   const frame = (now: number) => {
     requestAnimationFrame(frame);
+    if (now - last < MIN_FRAME_MS - 0.25) return; // faster than 240 Hz: skip this one
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
-    acc += dt;
     user.update(dt);
     // glitch intensity follows his state
     const targets: Partial<Record<Mode, number>> = { summon: 0.25, doing: 0.35, thinking: 0.12, listening: 0.05, transcribing: 0.1 };
     world.glitch += ((targets[mode] ?? 0.02) - world.glitch) * Math.min(1, dt * 2);
     // the ground rumbles while he climbs out, and goes still when he looks at you
     world.shake = mode === 'summon' && now - summonStartedAt < 2400 ? 1 : Math.max(0, world.shake - dt * 3);
-    if (Math.random() < 0.002) world.glitch = 0.9; // the tape catches
-    if (acc < FRAME) return;
-    acc %= FRAME;
+    if (Math.random() < dt * 0.06) world.glitch = 0.9; // the tape catches (~once every 17 s, at any frame rate)
     world.render((now - t0) / 1000);
     fpsFrames++;
   };
