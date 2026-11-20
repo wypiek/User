@@ -247,7 +247,7 @@ export async function loadCharacter(url: string): Promise<Character> {
 // are sometimes dropped or stick for a moment, and every frame gets a little jitter.
 // Layers: a looping base clip per state + one-shot "acts"/gestures on top.
 
-const POSE_KEYS = ['bodyX', 'bodyY', 'bodyTurn', 'shoulderY', 'torsoX', 'torsoY', 'torsoZ', 'headX', 'headY', 'headZ',
+const POSE_KEYS = ['bodyX', 'bodyY', 'bodyZ', 'bodyTurn', 'shoulderY', 'torsoX', 'torsoY', 'torsoZ', 'headX', 'headY', 'headZ',
   'armLX', 'armLY', 'armLZ', 'armRX', 'armRY', 'armRZ', 'legLX', 'legLZ', 'legRX', 'legRZ'] as const;
 type PoseKey = (typeof POSE_KEYS)[number];
 type Pose = Record<PoseKey, number>;
@@ -396,6 +396,33 @@ const STATE_ACTS: Partial<Record<AnimState | 'listening', { acts: ActName[]; eve
   doing: { acts: ['checkCamera', 'bigPress'], every: [1.2, 2.8] },
 };
 
+// ---- when you click him: knocked back, head shake, brushes himself off (3.9 s) ---------
+// bodyZ < 0 is away from the camera (he faces +Z).
+const POKE = C({ len: 3.9, keys: [
+  [0, { bodyZ: 0, torsoX: 0.04, torsoZ: 0, headX: 0.1, headY: 0, headZ: 0.1, armLX: 0, armRX: 0, armLZ: 0.06, armRZ: -0.06, legLX: 0, legRX: 0 }],
+  [0.1, { bodyZ: -35, torsoX: -0.38, headX: -0.5, headZ: 0.25, armLX: -1.05, armRX: -0.9, armLZ: 0.75, armRZ: -0.7, legRX: 0.35 }], // the push lands
+  [0.35, { bodyZ: -58, torsoX: -0.2, torsoZ: -0.08, headX: -0.25, armLX: -0.6, armRX: -0.5, armLZ: 0.45, armRZ: -0.4, legRX: 0, legLX: 0.25 }], // staggers back a step
+  [0.6, { bodyZ: -52, torsoX: 0.06, torsoZ: 0, headX: 0.15, headZ: 0.1, armLX: -0.1, armRX: -0.1, armLZ: 0.15, armRZ: -0.15, legLX: 0 }], // catches himself
+  [0.8, { headY: 0.38 }], // shakes it off
+  [0.95, { headY: -0.38 }],
+  [1.1, { headY: 0.32 }],
+  [1.25, { headY: -0.25 }],
+  [1.4, { headY: 0, headX: 0.45, torsoX: 0.1 }], // looks down at himself
+  [1.55, { armRX: -1.25, armRZ: 0.85 }], // right hand brushes his chest...
+  [1.7, { armRX: -0.95, armRZ: 0.4 }],
+  [1.85, { armRX: -1.3, armRZ: 0.85 }],
+  [2.0, { armRX: -0.95, armRZ: 0.4 }],
+  [2.15, { armRX: -0.1, armRZ: -0.1, armLX: -1.25, armLZ: -0.85 }], // ...then the left hand
+  [2.3, { armLX: -0.95, armLZ: -0.4 }],
+  [2.45, { armLX: -1.3, armLZ: -0.85 }],
+  [2.6, { armLX: -0.1, armLZ: 0.1, torsoX: 0.38, headX: 0.55, armRX: -0.45, armRZ: 0.2 }], // bends to dust off his legs
+  [2.75, { armRX: -0.15, armRZ: 0.05 }],
+  [2.9, { armRX: -0.45, armRZ: 0.2 }],
+  [3.05, { armRX: -0.15, armRZ: 0.05 }],
+  [3.3, { torsoX: 0.04, headX: 0.1, armRX: 0, armRZ: -0.06, armLZ: 0.06, bodyZ: -20, legLX: -0.25 }], // steps back to his spot
+  [3.6, { bodyZ: 0, legLX: 0 }],
+] });
+
 // ---- gestures while talking, chosen from the words he's saying -----------------------
 const rest = { armLX: -0.45, armRX: -0.4, armLZ: 0.12, armRZ: -0.12, headX: 0.02, headY: 0, headZ: 0.1, torsoX: 0.05, bodyY: 0 };
 const GESTURES = {
@@ -485,7 +512,7 @@ interface Joints {
   body: THREE.Group; torsoPivot: THREE.Group; neck: THREE.Group;
   armL: THREE.Group; armR: THREE.Group; legL: THREE.Group; legR: THREE.Group;
 }
-interface Playing { clip: Compiled; start: number }
+interface Playing { clip: Compiled; start: number; fadeIn?: number }
 
 export class Character {
   state: AnimState = 'idle';
@@ -530,6 +557,20 @@ export class Character {
     let g: GestureName | null = hit ? hit[1] : null;
     if (!g && Math.random() < 0.7) g = Math.random() < 0.5 ? 'beatL' : 'beatR';
     if (g) this.action = { clip: GESTURES[g], start: this.time };
+  }
+
+  /** You clicked him. Returns false if he can't react right now (still climbing out). */
+  poke(): boolean {
+    if (this.state === 'summon') return false;
+    if (this.action?.clip === POKE && this.time - this.action.start < 0.6) return false; // already reeling
+    this.action = { clip: POKE, start: this.time, fadeIn: 0.04 }; // the push lands instantly
+    this.lastStep = -1;
+    return true;
+  }
+
+  /** Is the given ray pointing at him (his body, not the dirt around him)? */
+  hitBy(ray: THREE.Raycaster): boolean {
+    return ray.intersectObject(this.j.body, true).length > 0;
   }
 
   /** Play a named act or gesture right now (used by the animation reel / debugging). */
@@ -596,7 +637,7 @@ export class Character {
     if (this.action) {
       const at = t - this.action.start;
       const len = this.action.clip.clip.len;
-      const w = ease(Math.min(1, at / 0.2, (len - at) / 0.25));
+      const w = ease(Math.min(1, at / (this.action.fadeIn ?? 0.2), (len - at) / 0.25));
       p = lerpPose(p, this.action.clip.sample(at), w, this.action.clip.mask);
     }
     const bt = (t - this.blendStart) / 0.3;
@@ -609,7 +650,7 @@ export class Character {
     const jit = (k: number) => (hash(n * 7 + k) - 0.5) * jamt;
 
     const { body, torsoPivot, neck, armL, armR, legL, legR } = this.j;
-    body.position.set(p.bodyX * UNIT, p.bodyY * UNIT, 0); // poses are keyed in model units; body sits in studs
+    body.position.set(p.bodyX * UNIT, p.bodyY * UNIT, p.bodyZ * UNIT); // poses are keyed in model units; body sits in studs
     body.rotation.y = p.bodyTurn;
     torsoPivot.rotation.set(p.torsoX + breath + jit(1), p.torsoY, p.torsoZ + jit(2));
     neck.rotation.set(p.headX + this.bob * 0.14 + jit(3), p.headY + jit(4), p.headZ + jit(5));

@@ -1,4 +1,5 @@
 // User — frontend: wires the world, the character, his voice, his ears and his brain (Rust).
+import * as THREE from 'three';
 import { World } from './scene';
 import { loadCharacter, type Character } from './character';
 import { Voice } from './voice';
@@ -234,6 +235,26 @@ function stopHim() {
   if (mode === 'responding') { voice.stop(); setMode('waiting'); }
   else if (mode === 'thinking' || mode === 'doing') { void bridge.cancel(); void say('...fine.'); }
 }
+
+// ------------------------------------------------------------------ clicking him
+const pointer = new THREE.Vector2();
+const ray = new THREE.Raycaster();
+function overUser(e: PointerEvent | MouseEvent): boolean {
+  if (!user || !world) return false;
+  const r = world.renderer.domElement.getBoundingClientRect();
+  pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(pointer, world.camera);
+  return user.hitBy(ray);
+}
+const stage = $<HTMLCanvasElement>('stage');
+stage.addEventListener('pointermove', (e) => { stage.style.cursor = mode !== 'summon' && overUser(e) ? 'pointer' : ''; });
+stage.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0 || !overUser(e)) return;
+  voice.resume();
+  if (!user.poke()) return;
+  voice.play('ouch', { rate: 1, gain: 1 });
+  world.glitch = Math.max(world.glitch, 0.6); // the tape jolts
+});
 
 window.addEventListener('keydown', (e) => {
   voice?.resume();

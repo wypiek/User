@@ -58,6 +58,7 @@ small enough to fit a 1366×768 laptop screen with its title bar and taskbar. On
 | **Left Ctrl** (hold) | Push to talk. Hold it, speak, then let go. |
 | **Enter** | Type to him instead of talking. |
 | **Esc** | Make him stop talking, or cancel what he's doing. |
+| **Click him** | He gets shoved: "ouch", he staggers back, shakes his head and brushes himself off. |
 | **F1** | Settings. |
 | **F3** | Show the frame rate and draw calls. |
 
@@ -107,6 +108,7 @@ see the actual frame rate.
 | **Thinking** | While the AI is working on an answer | Hand to his head, swaying, and the gears on his shirt start turning |
 | **Responding** | While he speaks | His head bobs on every sound, and his gestures come from his words: he points at you on "you", puts a hand on his chest on "I", shrugs at a question, shakes his head on "no", hugs himself on "alone" or "dark", and nods on "yes" |
 | **Doing things** | When he opens an app or controls your device | Pumps invisible levers, the gears spin fast, the tape glitches, and the action is shown under him, e.g. `opening spotify` |
+| **Poked** | You click him (any time after he's out of the ground) | The "ouch" sound plays, he's knocked back a step with his arms flung out, catches himself, shakes his head, brushes off his chest with each hand and dusts off his legs, then steps back to his spot |
 
 ## Project layout
 
