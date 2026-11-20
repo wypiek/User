@@ -93,6 +93,29 @@ the same with both backends and needs no API key. The first time it runs, it dow
 Hugging Face (about 80 MB for the default `whisper-base.en`) and caches it. After that it works
 offline. You can switch to `tiny` (faster) or `small` (more accurate) in settings.
 
+## Drawing
+
+Ask him to draw something ("can you draw me a cat under the moon?"), or describe a picture you want, and he draws it
+**by hand** in his own little paint program, `userpaint`. Nothing is image-generated. The AI writes the drawing as a
+list of simple shapes (a tiny SVG), and the paint program ([`src/paint.ts`](src/paint.ts)) traces every outline with
+a pen and colours every shape in with marker hatching, stroke by stroke, onto a notebook page. It only reads shape
+geometry and colours from the SVG: nothing from it is ever put into the page as markup.
+
+1. He takes a notebook from behind his back and a pen from his pocket, then thinks with the pen on his chin while the
+   AI works out the strokes.
+2. He draws. The ink goes onto the page he's holding.
+3. He clicks the pen, puts it away, holds the notebook up with its back to you and asks if you want to see it.
+   - **Yes:** he turns it around and the `userpaint.exe` window pops up with a sharp copy (it has a **Save** button,
+     which saves to `Pictures/User`). Then he asks if you like it.
+   - **No:** he throws it up in the air and it explodes into paper scraps.
+4. Do you like it?
+   - **Yes:** he's flattered. Every few minutes after that, he may offer to draw you something else.
+   - **No:** he asks what he should do better, unless you already said why. He remembers it.
+
+What you say about each drawing is saved in `memory.json` in the app's config folder. Every new drawing request
+includes those notes, so his drawings follow what you liked and avoid what you didn't. Press **Esc** while he's
+drawing to make him stop.
+
 ## Animations
 
 All of them run at 15 fps but stay choppy on purpose: frames are sometimes dropped, a pose sometimes
@@ -108,6 +131,7 @@ see the actual frame rate.
 | **Thinking** | While the AI is working on an answer | Hand to his head, swaying, and the gears on his shirt start turning |
 | **Responding** | While he speaks | His head bobs on every sound, and his gestures come from his words: he points at you on "you", puts a hand on his chest on "I", shrugs at a question, shakes his head on "no", hugs himself on "alone" or "dark", and nods on "yes" |
 | **Doing things** | When he opens an app or controls your device | Pumps invisible levers, the gears spin fast and the tape glitches |
+| **Drawing** | You ask for a drawing | Takes out a notebook and pen, thinks, draws, clicks the pen and puts it away, holds the drawing up, then turns it around, gets flattered or sad, or throws it up so it explodes (see [Drawing](#drawing)) |
 | **Poked** | You click him (any time after he's out of the ground) | The "ouch" sound plays, he's knocked back a step with his arms flung out, catches himself, shakes his head, brushes off his chest with each hand and dusts off his legs, then steps back to his spot |
 
 ## Project layout
@@ -116,11 +140,13 @@ see the actual frame rate.
 src-tauri/src/lib.rs        Tauri commands: settings, ask/cancel/reset, models, mic start/stop
 src-tauri/src/ai.rs         the two brains (Claude Code process / OpenRouter + tools) and User's persona
 src-tauri/src/device.rs     device-control tools (open apps/URLs/files, run commands with confirmation)
+src-tauri/src/memory.rs     what he remembers about your opinion of his drawings
 src-tauri/src/mic.rs        push-to-talk microphone capture + resampling to 16 kHz (cpal)
 src-tauri/src/settings.rs   settings persisted in the config folder
 src/main.ts                 state machine, push to talk, captions, settings UI
 src/scene.ts                Glass Houses at night, the camera on User, VHS post-processing
 src/character.ts            rebuilds the 2006 figure into a rig: sad face, gear shirt, choppy animations
+src/paint.ts                userpaint: traces the AI's drawing by hand onto the notebook page
 src/voice.ts                the sound-effect voice (random order, 1.6x) and the night ambience
 src/stt.ts                  Whisper speech-to-text
 src/bridge.ts               typed wrappers around the Rust commands

@@ -2,6 +2,7 @@
 
 mod ai;
 mod device;
+mod memory;
 mod mic;
 mod settings;
 
@@ -14,6 +15,7 @@ use tauri::{AppHandle, Manager, State};
 struct AppState {
     settings: Mutex<settings::Settings>,
     settings_path: PathBuf,
+    memory_path: PathBuf,
     brain: ai::Brain,
     mic: mic::Mic,
 }
@@ -71,6 +73,58 @@ async fn ask(
         .await
 }
 
+/// Have User make a drawing of `subject`. Returns SVG strokes for the paint program.
+#[tauri::command]
+async fn draw(state: State<'_, AppState>, subject: String) -> Result<String, String> {
+    let settings = state.settings.lock().unwrap().clone();
+    let lessons = memory::drawing_lessons(&memory::load(&state.memory_path));
+    let subject: String = subject.chars().take(400).collect();
+    state.brain.draw(&subject, &lessons, settings).await
+}
+
+/// Remember how the person felt about a drawing, so the next ones get better.
+#[tauri::command]
+fn drawing_feedback(state: State<'_, AppState>, subject: String, liked: bool, note: String) -> Result<(), String> {
+    let mut m = memory::load(&state.memory_path);
+    let at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    m.drawings.push(memory::DrawingNote {
+        subject: subject.chars().take(200).collect(),
+        liked,
+        note: note.chars().take(500).collect(),
+        at,
+    });
+    let len = m.drawings.len();
+    if len > 200 {
+        m.drawings.drain(0..len - 200);
+    }
+    memory::save(&state.memory_path, &m)
+}
+
+/// Save a finished drawing (PNG bytes) into Pictures/User and return where it went.
+#[tauri::command]
+fn save_drawing(app: AppHandle, png: Vec<u8>, subject: String) -> Result<String, String> {
+    if !png.starts_with(&[0x89, b'P', b'N', b'G']) {
+        return Err("not a png".into());
+    }
+    let base = app.path().picture_dir().or_else(|_| app.path().home_dir()).map_err(|e| e.to_string())?;
+    let dir = base.join("User");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let slug: String = subject
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect::<String>()
+        .split('-')
+        .filter(|w| !w.is_empty())
+        .take(6)
+        .collect::<Vec<_>>()
+        .join("-");
+    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let path = dir.join(format!("drawing-{secs}-{}.png", if slug.is_empty() { "untitled" } else { &slug }));
+    std::fs::write(&path, png).map_err(|e| e.to_string())?;
+    Ok(path.display().to_string())
+}
+
 #[tauri::command]
 fn cancel(state: State<'_, AppState>) {
     state.brain.cancel();
@@ -124,17 +178,20 @@ pub fn run() {
         .setup(|app| {
             let dir = app.path().app_config_dir()?;
             let settings_path = dir.join("settings.json");
+            let memory_path = dir.join("memory.json");
             let settings = settings::load(&settings_path);
             app.manage(AppState {
                 settings: Mutex::new(settings),
                 settings_path,
+                memory_path,
                 brain: ai::Brain::default(),
                 mic: mic::Mic::default(),
             });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            get_settings, set_settings, ask, cancel, reset, list_models, mic_start, mic_stop, mic_cancel
+            get_settings, set_settings, ask, cancel, reset, list_models, mic_start, mic_stop, mic_cancel,
+            draw, drawing_feedback, save_drawing
         ])
         .run(tauri::generate_context!())
         .expect("error while running User");

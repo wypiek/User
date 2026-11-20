@@ -5,15 +5,16 @@ import { loadCharacter, type Character } from './character';
 import { Voice } from './voice';
 import { loadSTT, transcribe } from './stt';
 import { bridge, type Settings } from './bridge';
+import { Painter } from './paint';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
 const ui = {
-  caption: $('caption'), typebox: $<HTMLInputElement>('typebox'), settings: $('settings'),
+  caption: $('caption'), paintwin: $('paintwin'), typebox: $<HTMLInputElement>('typebox'), settings: $('settings'),
   boot: $('boot'), bootDetail: $('boot-detail'),
 };
 
-type Mode = 'booting' | 'summon' | 'idle' | 'listening' | 'transcribing' | 'thinking' | 'doing' | 'responding' | 'waiting';
+type Mode = 'booting' | 'summon' | 'idle' | 'listening' | 'transcribing' | 'thinking' | 'doing' | 'responding' | 'waiting' | 'drawing';
 
 let settings: Settings;
 let world: World;
@@ -44,7 +45,11 @@ async function boot() {
   ]);
   user = character;
   world.addCharacter(user);
-  user.onStateEnd = (ended) => { if (ended === 'summon') afterSummon(); };
+  user.onStateEnd = (ended) => {
+    if (ended === 'summon') afterSummon();
+    else drawStateEnded(ended);
+  };
+  user.inkColors = () => painter.sampleColors(32);
 
   startLoop();
   ui.boot.classList.add('gone');
@@ -97,6 +102,11 @@ function startLoop() {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
     user.update(dt);
+    // his paint program puts down ink while he draws; the notebook page re-uploads
+    painter.update(dt);
+    if (painter.dirty) { painter.dirty = false; user.pageChanged(); }
+    checkWaiters();
+    maybeOfferDrawing();
     // glitch intensity follows his state
     const targets: Partial<Record<Mode, number>> = { summon: 0.25, doing: 0.35, thinking: 0.12, listening: 0.05, transcribing: 0.1 };
     world.glitch += ((targets[mode] ?? 0.02) - world.glitch) * Math.min(1, dt * 2);
@@ -120,6 +130,8 @@ let showFps = false;
 function setMode(m: Mode) {
   mode = m;
   clearTimeout(idleTimer);
+  // while he's holding the notebook, the drawing flow drives his animation, not the mode
+  if (drawingActive) return;
   user.ctx.listening = m === 'listening';
   switch (m) {
     case 'listening': user.setState('waiting', { force: true }); break;
@@ -136,18 +148,30 @@ function setMode(m: Mode) {
   }
 }
 
-const busy = () => (['thinking', 'doing', 'transcribing', 'summon', 'booting'] as Mode[]).includes(mode);
+const busy = () => (['thinking', 'doing', 'transcribing', 'summon', 'booting', 'drawing'] as Mode[]).includes(mode);
 
 // ------------------------------------------------------------------ talking to him
 async function handleUserText(raw: string) {
   const text = raw.trim();
   if (!text) return setMode('waiting');
+  // he asked you something about a drawing: this is the answer
+  if (awaiting && (await answerDrawingQuestion(text))) return;
   setMode('thinking');
   const res = await bridge.ask(text, (ev) => {
     if (ev.type === 'doing' && (mode === 'thinking' || mode === 'doing')) setMode('doing');
   });
   if (mode !== 'thinking' && mode !== 'doing') return; // cancelled
   if (!res.ok) return say(`...something is wrong. ${res.error}`);
+  // he decided to draw: the reply is "[DRAW: what to draw]"
+  const marker = res.text.match(/\[DRAW:\s*([^\]]+)\]/i);
+  let subject = marker?.[1]?.trim() ?? '';
+  const rest = cleanReply(res.text.replace(/\[DRAW:[^\]]*\]/gi, ''));
+  // safety net: "draw me a cat" and he talked instead of drawing (but didn't ask what to draw)
+  if (!subject && DRAW_REQUEST.test(text) && !rest.includes('?')) subject = text;
+  if (subject) {
+    await say(rest !== '...' ? shorten(rest) : "...okay. i'll draw it for you.");
+    return startDrawing(subject);
+  }
   return say(shorten(cleanReply(res.text)));
 }
 
@@ -179,8 +203,9 @@ function shorten(text: string, maxWords = 30, maxSentences = 2): string {
 
 const escapeHtml = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
-async function say(text: string) {
-  setMode('responding');
+/** Speak. With `pose`, he keeps doing what he's doing (holding the notebook) while he talks. */
+async function say(text: string, { pose = false } = {}) {
+  if (pose) { mode = 'responding'; clearTimeout(idleTimer); } else setMode('responding');
   clearTimeout(captionTimer);
   ui.caption.className = '';
   ui.caption.textContent = '';
@@ -193,8 +218,208 @@ async function say(text: string) {
   if (mode !== 'responding') return;
   const words = text.split(/\s+/).length;
   captionTimer = window.setTimeout(() => ui.caption.classList.add('fade'), Math.max(7000, words * 450));
-  setMode('waiting');
+  if (pose) mode = 'waiting'; else setMode('waiting');
 }
+
+// ------------------------------------------------------------------ drawing
+// He draws in his own paint program (paint.ts): the AI writes the strokes, the program
+// traces them onto the notebook page he's holding. The steps:
+//   take out notebook + pen -> think -> draw -> click pen, put it away, hold it up:
+//   "do you want to see it?"  yes -> turn it around + pop-up window -> "do you like it?"
+//                             no  -> throw it up, it explodes
+//   liked -> flattered (and later he offers another one)   disliked -> asks what to improve, remembers
+type Question = 'see' | 'like' | 'why' | 'offer' | 'subject';
+const painter = new Painter(1);
+const DRAW_REQUEST = /\b(draw|sketch|paint|doodle)\b\s+(me\s+|us\s+)?(a|an|the|some|my|your|this|that|him|her|it)?\s*\w+/i;
+let drawingActive = false; // he's holding the notebook: the flow drives his animation
+let drawSubject = '';
+let awaiting: Question | null = null;
+let reasks = 0;
+let nextOfferAt = Infinity;
+let dislikedNote = '';
+
+const waiters: { ok: () => boolean; done: () => void }[] = [];
+/** Resolves on the first frame where `ok()` is true. */
+const until = (ok: () => boolean) => new Promise<void>((done) => waiters.push({ ok, done }));
+function checkWaiters() {
+  for (let i = waiters.length - 1; i >= 0; i--) if (waiters[i].ok()) { const w = waiters.splice(i, 1)[0]; w.done(); }
+}
+
+/** "yeah sure" -> yes, "nope" -> no, anything else -> null. */
+function yesNo(text: string): 'yes' | 'no' | null {
+  const t = ` ${text.toLowerCase().replace(/[^a-z' ]+/g, ' ')} `;
+  if (/ not bad | not too bad /.test(t)) return 'yes';
+  if (/ (no|nope|nah|naw|nay|never|not really|not now|no thanks|don'?t|do not|didn'?t|hate it|hated|ugly|bad|awful|terrible|nie) /.test(t)) return 'no';
+  if (/ (yes|yeah|yea|yep|yup|ya|sure|ok|okay|alright|of course|please|show me|let me see|why not|absolutely|definitely|love it|loved|like it|i do|it'?s (good|great|nice|cool|beautiful|amazing|awesome|cute)|great|nice|cool|beautiful|amazing|awesome|tak) /.test(t)) return 'yes';
+  return null;
+}
+
+async function startDrawing(subject: string) {
+  drawingActive = true;
+  drawSubject = subject;
+  awaiting = null;
+  mode = 'drawing';
+  clearTimeout(idleTimer);
+  closePaintWindow();
+  painter.clear();
+  user.setPage(painter.canvas);
+  user.setState('drawPrep', { force: true });
+  // he thinks (pen on his chin) while the AI works out the strokes
+  const res = await bridge.draw(subject);
+  if (!drawingActive) return; // cancelled
+  if (!res.ok) return drawingFailed(res.error);
+  try {
+    if (painter.load(res.svg, 12) === 0) return drawingFailed('the page stayed blank.');
+  } catch {
+    return drawingFailed('the drawing came out wrong.');
+  }
+  await until(() => user.state !== 'drawPrep');
+  if (!drawingActive) return;
+  user.setState('drawing');
+  await until(() => !painter.drawing || !drawingActive);
+  if (!drawingActive) return;
+  // click the pen, put it away, hold it up
+  user.setState('drawDone');
+  setTimeout(() => voice.play('press', { rate: 1.6, gain: 0.55 }), 350);
+}
+
+function drawStateEnded(ended: string) {
+  if (ended === 'drawDone' && drawingActive) {
+    ask('see', "...i finished it. do you want to see it?");
+  } else if (ended === 'drawReveal' && drawingActive) {
+    openPaintWindow();
+    ask('like', '...do you like it?');
+  } else if (ended === 'drawToss' || ended === 'drawPutAway') {
+    drawingActive = false;
+    if (mode !== 'responding') setMode(awaiting ? 'waiting' : 'idle');
+  }
+}
+
+function ask(q: Question, line: string) {
+  awaiting = q;
+  reasks = 0;
+  void say(line, { pose: drawingActive });
+}
+
+/** Returns true if `text` was taken as the answer to his question. */
+async function answerDrawingQuestion(text: string): Promise<boolean> {
+  const q = awaiting!;
+  const yn = yesNo(text);
+  if (q === 'subject') {
+    awaiting = null;
+    const pick = /\b(anything|whatever|you choose|your choice|surprise me|up to you|dunno|don'?t know|you pick)\b/i.test(text);
+    void startDrawing(pick ? 'something you would love to draw for them' : text);
+    return true;
+  }
+  if (q === 'why') {
+    awaiting = null;
+    const note = [dislikedNote, text].filter(Boolean).join(' / ');
+    void bridge.drawingFeedback(drawSubject, false, note);
+    void say("...okay. i'll remember that. next time it'll be better.", { pose: drawingActive });
+    return true;
+  }
+  if (q === 'offer') {
+    awaiting = null;
+    if (yn === 'yes') { ask('subject', '...what should i draw?'); return true; }
+    nextOfferAt = performance.now() + (6 + Math.random() * 6) * 60_000;
+    if (yn === 'no') { void say('...okay.'); return true; }
+    return false; // not an answer: talk about whatever they said
+  }
+  if (!yn) {
+    if (++reasks > 2) { // still no clear answer: take it as a yes to seeing it, and drop the "like" question
+      if (q === 'see') { awaiting = null; reveal(); } else { awaiting = null; putAway(); }
+      return true;
+    }
+    void say('...yes or no?', { pose: drawingActive });
+    return true;
+  }
+  awaiting = null;
+  if (q === 'see') {
+    if (yn === 'yes') reveal();
+    else toss();
+  } else if (q === 'like') {
+    if (yn === 'yes') {
+      void bridge.drawingFeedback(drawSubject, true, text);
+      user.setState('drawFlattered');
+      void say("...really? th-thank you. nobody ever liked my drawings before.", { pose: true });
+      nextOfferAt = performance.now() + (2 + Math.random() * 3) * 60_000; // later, he'll offer another
+    } else {
+      user.setState('drawSad');
+      // a real reason ("no, the legs are weird") is enough; otherwise he asks what to fix
+      const words = text.trim().split(/\s+/).length;
+      if (words >= 4) {
+        void bridge.drawingFeedback(drawSubject, false, text);
+        void say("...oh. i'll remember that. i'll do better next time.", { pose: true });
+      } else {
+        dislikedNote = text;
+        ask('why', '...oh. what should i do better next time?');
+      }
+    }
+  }
+  return true;
+}
+
+function reveal() {
+  user.setState('drawReveal');
+}
+
+function toss() {
+  closePaintWindow();
+  user.setState('drawToss');
+  setTimeout(() => { voice.play('glass', { rate: 1.1, gain: 1 }); world.glitch = 1; }, 700); // the explosion
+  setTimeout(() => { if (!awaiting) void say('...fine. no one will ever see it now.', { pose: true }); }, 1500);
+}
+
+function putAway() {
+  user.setState('drawPutAway');
+}
+
+function drawingFailed(error: string) {
+  console.error('drawing failed', error);
+  putAway();
+  void say("...my hand won't move. i can't draw right now.", { pose: true });
+}
+
+function cancelDrawing() {
+  awaiting = null;
+  void bridge.cancel();
+  painter.drawing = false;
+  putAway();
+  void say('...nevermind.', { pose: true });
+}
+
+/** Now and then, after you liked one, he offers to draw something else. */
+function maybeOfferDrawing() {
+  if (performance.now() < nextOfferAt || drawingActive || awaiting || (mode !== 'idle' && mode !== 'waiting')) return;
+  nextOfferAt = Infinity;
+  ask('offer', '...do you want me to draw you something else?');
+}
+
+// ---- userpaint.exe: the finished drawing, shown sharp
+function openPaintWindow() {
+  const box = $('paintCanvas');
+  box.replaceChildren(painter.copyAt(2));
+  $('paintTitle').textContent = drawSubject;
+  $('paintSave').textContent = 'Save';
+  ui.paintwin.hidden = false;
+}
+function closePaintWindow() { ui.paintwin.hidden = true; }
+$('paintClose').addEventListener('click', closePaintWindow);
+$('paintOk').addEventListener('click', closePaintWindow);
+$('paintSave').addEventListener('click', async () => {
+  const btn = $('paintSave');
+  const canvas = $('paintCanvas').querySelector('canvas');
+  if (!canvas) return;
+  const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/png'));
+  if (!blob) return;
+  try {
+    await bridge.saveDrawing(new Uint8Array(await blob.arrayBuffer()), drawSubject);
+    btn.textContent = 'Saved to Pictures/User';
+  } catch (e) {
+    console.error('save failed', e);
+    btn.textContent = 'Could not save';
+  }
+});
 
 // ------------------------------------------------------------------ push to talk: LEFT CONTROL
 async function startListening() {
@@ -232,6 +457,7 @@ async function finishListening() {
 }
 
 function stopHim() {
+  if (drawingActive && !awaiting) { cancelDrawing(); return; }
   if (mode === 'responding') { voice.stop(); setMode('waiting'); }
   else if (mode === 'thinking' || mode === 'doing') { void bridge.cancel(); void say('...fine.'); }
 }
@@ -259,6 +485,7 @@ stage.addEventListener('pointerdown', (e) => {
 window.addEventListener('keydown', (e) => {
   voice?.resume();
   if (!ui.settings.hidden) { if (e.key === 'Escape') closeSettings(); return; }
+  if (!ui.paintwin.hidden && e.key === 'Escape') { closePaintWindow(); return; }
   if (e.key === 'F1') { e.preventDefault(); openSettings(); return; }
   if (e.key === 'F3') { e.preventDefault(); showFps = !showFps; $('fps').textContent = ''; return; }
   if (!user) return;

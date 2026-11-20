@@ -239,7 +239,28 @@ export async function loadCharacter(url: string): Promise<Character> {
   const legR = pivot(body, -50, 200, 0);
   legR.add(at(mesh(parts.legA, matBlack), 0, -100, 0));
 
-  return new Character(root, { body, torsoPivot, neck, armL, armR, legL, legR }, shirt);
+  // ---- props for drawing: a notebook (held in front of his chest) and a pen (in his right hand)
+  const pageMat = new THREE.MeshBasicMaterial({ color: 0xc9cfff }); // the page, a little moonlit; gets the paint canvas
+  const edgeMat = new THREE.MeshLambertMaterial({ color: 0xd8d4c8 });
+  const coverMat = new THREE.MeshLambertMaterial({ color: 0x3a0c10 });
+  // box faces: +x, -x, +y, -y, +z (the page), -z (the cover)
+  const notebook = new THREE.Mesh(new THREE.BoxGeometry(150, 112, 8), [edgeMat, edgeMat, edgeMat, edgeMat, pageMat, coverMat]);
+  notebook.castShadow = true;
+  const note = new THREE.Group();
+  note.add(notebook);
+  note.visible = false;
+  torsoPivot.add(note);
+  const pen = new THREE.Group();
+  const penBody = new THREE.Mesh(new THREE.CylinderGeometry(4, 3, 70, 8), new THREE.MeshLambertMaterial({ color: 0x111116 }));
+  const penCap = new THREE.Mesh(new THREE.CylinderGeometry(4.5, 4.5, 16, 8), matBlue);
+  penCap.position.y = 30;
+  pen.add(penBody, penCap);
+  pen.position.set(0, -192, 18);
+  pen.rotation.x = 0.7;
+  pen.visible = false;
+  armR.add(pen);
+
+  return new Character(root, { body, torsoPivot, neck, armL, armR, legL, legR, note, pen }, shirt, pageMat);
 }
 
 // ---------------------------------------------------------------- animation
@@ -248,7 +269,9 @@ export async function loadCharacter(url: string): Promise<Character> {
 // Layers: a looping base clip per state + one-shot "acts"/gestures on top.
 
 const POSE_KEYS = ['bodyX', 'bodyY', 'bodyZ', 'bodyTurn', 'shoulderY', 'torsoX', 'torsoY', 'torsoZ', 'headX', 'headY', 'headZ',
-  'armLX', 'armLY', 'armLZ', 'armRX', 'armRY', 'armRZ', 'legLX', 'legLZ', 'legRX', 'legRZ'] as const;
+  'armLX', 'armLY', 'armLZ', 'armRX', 'armRY', 'armRZ', 'legLX', 'legLZ', 'legRX', 'legRZ',
+  // props: the notebook (in torso space, model units) and the pen; *On > 0.5 = visible
+  'noteOn', 'noteX', 'noteY', 'noteZ', 'noteTilt', 'noteFlip', 'noteSpin', 'penOn'] as const;
 type PoseKey = (typeof POSE_KEYS)[number];
 type Pose = Record<PoseKey, number>;
 type Key = [time: number, pose: Partial<Pose>];
@@ -256,7 +279,10 @@ interface Clip { len: number; loop?: boolean; keys: Key[] }
 
 const ZERO = Object.fromEntries(POSE_KEYS.map((k) => [k, 0])) as Pose;
 
-export type AnimState = 'summon' | 'idle' | 'thinking' | 'responding' | 'waiting' | 'doing';
+export type AnimState = 'summon' | 'idle' | 'thinking' | 'responding' | 'waiting' | 'doing'
+  | 'drawPrep' | 'drawPonder' | 'drawing' | 'drawDone' | 'drawHold' | 'drawReveal' | 'drawShow'
+  | 'drawToss' | 'drawFlattered' | 'drawSad' | 'drawPutAway';
+export const isDrawState = (s: AnimState) => s.startsWith('draw');
 interface AnimCtx { listening: boolean }
 
 // deterministic per-frame noise so a held frame stays exactly held
@@ -369,6 +395,111 @@ const SUMMON = C({ len: 3.8, keys: [
 const SUMMON_STARE_AT = 2.75;
 // moments the ground breaks: [time, x offset in studs (0 = around him), how many chunks]
 const SUMMON_DEBRIS: [number, number, number][] = [[0.35, 0, 14], [0.75, 3.2, 8], [0.75, -3.2, 8], [1.35, 0, 6], [1.8, 0, 6], [2.05, 0.6, 8]];
+
+// ---- drawing ------------------------------------------------------------------------
+// Notebook positions are in torso space (model units): chest front is z = 50.
+// noteFlip 0 = page toward him, cover toward you; 1 = page toward you.
+const NOTE_DRAW = { noteOn: 1, noteX: 0, noteY: 105, noteZ: 115, noteTilt: 1.0, noteFlip: 0, noteSpin: 0 }; // lying in his hand, page up
+const NOTE_SHOW = { noteOn: 1, noteX: 0, noteY: 140, noteZ: 140, noteTilt: 0, noteSpin: 0 }; // held up in front of him
+const HOLD_LEFT = { armLX: -1.1, armLZ: -0.75 }; // left hand under the notebook
+const PEN_ON_PAGE = { armRX: -1.15, armRZ: 0.7 };
+const BOTH_HOLD = { armLX: -1.29, armLZ: -0.5, armRX: -1.29, armRZ: 0.5 }; // both hands on its edges
+const DRAW = {
+  // takes the notebook from behind his back, then the pen from his pocket
+  drawPrep: C({ len: 2.6, keys: [
+    [0, { noteOn: 0, penOn: 0, noteX: 170, noteY: 30, noteZ: -90, noteTilt: 0, noteFlip: 0, noteSpin: 0, armLX: 0, armLZ: 0.06, armRX: 0, armRZ: -0.06, headX: 0.1, headY: 0, headZ: 0.1, torsoX: 0.04, torsoY: 0 }],
+    [0.4, { armLX: 0.75, armLZ: 0.2, torsoY: -0.25, headY: -0.45, headX: 0.25 }], // reaches behind his back
+    [0.6, { noteOn: 1 }],
+    [0.8, {}],
+    [1.3, { ...NOTE_DRAW, noteTilt: 0.4, ...HOLD_LEFT, torsoY: 0, headY: 0, headX: 0.35 }], // brings it round in front
+    [1.6, { armRX: -0.25, armRZ: -0.3, headX: 0.5, headY: 0.2 }], // right hand to his pocket
+    [1.8, { penOn: 1 }],
+    [2.2, { ...PEN_ON_PAGE, noteTilt: 1.0, headY: 0, headX: 0.5 }],
+  ] }),
+  // pen tapping his chin while he works out what to draw
+  drawPonder: C({ len: 2.4, loop: true, keys: [
+    [0, { ...NOTE_DRAW, ...HOLD_LEFT, penOn: 1, armRX: -2.15, armRZ: 0.65, headX: -0.2, headY: 0.25, headZ: -0.1, torsoX: 0.05 }],
+    [0.6, { armRX: -2.3 }],
+    [1.2, { armRX: -2.15, headY: -0.15, headX: -0.3 }],
+    [1.8, { armRX: -2.3 }],
+  ] }),
+  // scribbling, eyes on the page
+  drawing: C({ len: 1.2, loop: true, keys: [
+    [0, { ...NOTE_DRAW, ...HOLD_LEFT, ...PEN_ON_PAGE, penOn: 1, headX: 0.5, headY: 0, headZ: 0, torsoX: 0.08 }],
+    [0.15, { armRX: -1.25, armRZ: 0.55 }],
+    [0.3, { armRX: -1.08, armRZ: 0.8 }],
+    [0.45, { armRX: -1.2, armRZ: 0.6, headZ: 0.05 }],
+    [0.6, { armRX: -1.1, armRZ: 0.75 }],
+    [0.75, { armRX: -1.28, armRZ: 0.65, headZ: -0.05 }],
+    [0.9, { armRX: -1.12, armRZ: 0.5 }],
+    [1.05, { armRX: -1.22, armRZ: 0.72 }],
+  ] }),
+  // clicks the pen, puts it away, holds the drawing up (back toward you) and looks at you
+  drawDone: C({ len: 2.3, keys: [
+    [0, { ...NOTE_DRAW, ...HOLD_LEFT, ...PEN_ON_PAGE, penOn: 1, headX: 0.5, headY: 0, headZ: 0, torsoX: 0.08 }],
+    [0.25, { armRX: -1.55, armRZ: 0.6, headX: 0.35 }], // lifts the pen...
+    [0.35, { armRX: -1.48 }], // ...click
+    [0.8, { armRX: -0.25, armRZ: -0.3, headX: 0.4 }], // into his pocket
+    [1.0, { penOn: 0 }],
+    [1.15, {}],
+    [1.8, { ...NOTE_SHOW, noteFlip: 0, ...BOTH_HOLD, headX: -0.05, headZ: 0.2, torsoX: 0.04 }],
+  ] }),
+  // "do you want to see it?"
+  drawHold: C({ len: 3, loop: true, keys: [
+    [0, { ...NOTE_SHOW, noteFlip: 0, ...BOTH_HOLD, penOn: 0, headX: -0.05, headZ: 0.2, torsoX: 0.04 }],
+    [1.5, { headZ: 0.3, noteY: 136 }],
+  ] }),
+  // turns it around to show you
+  drawReveal: C({ len: 1.1, keys: [
+    [0, { ...NOTE_SHOW, noteFlip: 0, ...BOTH_HOLD, penOn: 0, headX: -0.05, headZ: 0.2, torsoX: 0.04 }],
+    [0.2, { noteY: 152 }],
+    [0.75, { noteFlip: 1, noteY: 140 }],
+  ] }),
+  // holding it up for you, a little nervous
+  drawShow: C({ len: 3, loop: true, keys: [
+    [0, { ...NOTE_SHOW, noteFlip: 1, ...BOTH_HOLD, penOn: 0, headX: -0.05, headZ: 0.2, torsoX: 0.04, bodyY: 0 }],
+    [1.5, { headZ: 0.1, headX: -0.1, bodyY: 3 }],
+  ] }),
+  // you liked it: bashful, hand behind his head, twisting
+  drawFlattered: C({ len: 3.4, keys: [
+    [0, { ...NOTE_SHOW, noteFlip: 1, ...BOTH_HOLD, penOn: 0, headX: -0.05, headZ: 0.2, torsoX: 0.04, torsoY: 0, bodyY: 0 }],
+    [0.4, { noteX: 40, noteY: 95, noteZ: 110, noteTilt: 0.2, armLX: -0.85, armLZ: -0.45, armRX: -2.85, armRZ: 0.95, headX: 0.35, headZ: -0.25, torsoY: 0.2 }],
+    [0.9, { torsoY: -0.2, headZ: -0.15, armRX: -2.7 }],
+    [1.4, { torsoY: 0.2, headZ: -0.25, armRX: -2.85 }],
+    [1.9, { torsoY: -0.15, armRX: -2.7, bodyY: 4 }],
+    [2.4, { torsoY: 0.1, bodyY: 0, armRX: -2.85 }],
+    [3.0, { torsoY: 0, armRX: -0.2, armRZ: -0.1, headX: 0.15, headZ: 0.1 }],
+  ] }),
+  // you didn't like it: lowers it, head hung
+  drawSad: C({ len: 2.0, keys: [
+    [0, { ...NOTE_SHOW, noteFlip: 1, ...BOTH_HOLD, penOn: 0, headX: -0.05, headZ: 0.2, torsoX: 0.04 }],
+    [0.5, { noteY: 90, noteZ: 105, noteTilt: -0.3, armLX: -0.7, armLZ: -0.5, armRX: -0.7, armRZ: 0.5, headX: 0.55, headZ: 0.1, torsoX: 0.15 }],
+  ] }),
+  // tucks the notebook back behind his back
+  drawPutAway: C({ len: 1.6, keys: [
+    [0, { noteOn: 1, noteX: 20, noteY: 95, noteZ: 110, noteTilt: 0.2, noteFlip: 1, noteSpin: 0, penOn: 0, armLX: -0.85, armLZ: -0.45, armRX: -0.1, armRZ: -0.1, headX: 0.2, headY: 0, torsoX: 0.06, torsoY: 0 }],
+    [0.5, { noteX: 170, noteY: 30, noteZ: -90, armLX: 0.75, armLZ: 0.2, torsoY: -0.25, headY: -0.3 }],
+    [0.8, { noteOn: 0 }],
+    [1.3, { armLX: 0, armLZ: 0.06, torsoY: 0, headY: 0, headX: 0.1 }],
+  ] }),
+  // you didn't want to see it: throws it up in the air, where it explodes
+  drawToss: C({ len: 2.6, keys: [
+    [0, { ...NOTE_SHOW, noteFlip: 0, ...BOTH_HOLD, penOn: 0, headX: -0.05, headZ: 0.2, torsoX: 0.04, bodyY: 0 }],
+    [0.25, { noteY: 90, noteZ: 120, armLX: -0.8, armRX: -0.8, armLZ: -0.55, armRZ: 0.55, torsoX: 0.2, headX: 0.3, bodyY: -6 }], // wind up
+    [0.45, { noteY: 420, noteZ: 160, noteSpin: 2.5, armLX: -2.9, armRX: -2.9, armLZ: -0.1, armRZ: 0.1, torsoX: -0.1, headX: -0.4, bodyY: 4 }], // throw!
+    [0.75, { noteY: 620, noteSpin: 5 }],
+    [0.8, { noteOn: 0 }],
+    [1.3, { armLX: -0.3, armRX: -0.3, armLZ: 0.1, armRZ: -0.1, headX: -0.5, bodyY: 0, torsoX: 0 }], // watches the scraps fall
+    [2.0, { armLX: 0, armRX: 0, armLZ: 0.06, armRZ: -0.06, headX: 0.45, headZ: 0.15, torsoX: 0.1 }], // looks down
+  ] }),
+};
+const TOSS_EXPLODE_AT = 0.7;
+/** One-shot states and what comes after them. */
+const NEXT: Partial<Record<AnimState, AnimState>> = {
+  summon: 'idle', drawPrep: 'drawPonder', drawDone: 'drawHold', drawReveal: 'drawShow',
+  drawToss: 'idle', drawFlattered: 'drawPutAway', drawSad: 'drawPutAway', drawPutAway: 'waiting',
+};
+const CLIPS: Record<string, Compiled> = { ...BASE, ...DRAW, summon: SUMMON };
 
 // ---- acts: little things he does on his own -----------------------------------------
 const ACTS = {
@@ -511,6 +642,41 @@ class GroundBreak {
 interface Joints {
   body: THREE.Group; torsoPivot: THREE.Group; neck: THREE.Group;
   armL: THREE.Group; armR: THREE.Group; legL: THREE.Group; legR: THREE.Group;
+  note: THREE.Group; pen: THREE.Group;
+}
+
+/** The drawing, torn to scraps: bits of paper and ink flying out of the explosion. */
+class PaperBurst {
+  readonly group = new THREE.Group();
+  private geo = new THREE.PlaneGeometry(1, 1);
+  private bits: { m: THREE.Mesh; v: THREE.Vector3; spin: THREE.Vector3; life: number; max: number }[] = [];
+
+  burst(at: THREE.Vector3, inkColors: string[]) {
+    for (let i = 0; i < 48; i++) {
+      const c = i % 3 === 0 || !inkColors.length ? '#f4f1e8' : inkColors[i % inkColors.length];
+      const m = new THREE.Mesh(this.geo, new THREE.MeshBasicMaterial({ color: c, side: THREE.DoubleSide, transparent: true }));
+      m.scale.set(0.12 + Math.random() * 0.28, 0.1 + Math.random() * 0.22, 1);
+      m.position.copy(at).add(new THREE.Vector3((Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.3));
+      const dir = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.3, Math.random() - 0.5).normalize();
+      const max = 1.6 + Math.random() * 1.2;
+      this.bits.push({ m, v: dir.multiplyScalar(3 + Math.random() * 6), spin: new THREE.Vector3(Math.random() * 12, Math.random() * 12, Math.random() * 12), life: max, max });
+      this.group.add(m);
+    }
+  }
+
+  step(dt: number) {
+    for (const b of this.bits) {
+      b.v.y -= 7 * dt;
+      b.v.multiplyScalar(1 - Math.min(0.9, dt * 1.6)); // paper drifts
+      b.m.position.addScaledVector(b.v, dt);
+      if (b.m.position.y < 0.03) { b.m.position.y = 0.03; b.v.set(0, 0, 0); b.spin.multiplyScalar(0.5); }
+      b.m.rotation.x += b.spin.x * dt; b.m.rotation.y += b.spin.y * dt; b.m.rotation.z += b.spin.z * dt;
+      b.life -= dt;
+      (b.m.material as THREE.MeshBasicMaterial).opacity = Math.min(1, b.life / 0.6);
+      if (b.life <= 0) { this.group.remove(b.m); (b.m.material as THREE.Material).dispose(); }
+    }
+    this.bits = this.bits.filter((b) => b.life > 0);
+  }
 }
 interface Playing { clip: Compiled; start: number; fadeIn?: number }
 
@@ -533,15 +699,38 @@ export class Character {
   private ground = new GroundBreak();
   private debrisIdx = 0;
   private lastStepTime = 0;
+  private paper = new PaperBurst();
+  private noteGone = false; // exploded: hide the notebook until the next state
+  private pageTex: THREE.CanvasTexture | null = null;
+  /** ink colors to make the scraps from when the drawing explodes */
+  inkColors: () => string[] = () => [];
 
-  constructor(readonly root: THREE.Group, private j: Joints, private shirt: GearShirt) {
-    root.add(this.ground.group);
+  constructor(readonly root: THREE.Group, private j: Joints, private shirt: GearShirt, private pageMat: THREE.MeshBasicMaterial) {
+    root.add(this.ground.group, this.paper.group);
+  }
+
+  /** Put the paint program's canvas on the notebook page. */
+  setPage(canvas: HTMLCanvasElement): void {
+    if (this.pageTex?.image !== canvas) {
+      this.pageTex?.dispose();
+      this.pageTex = new THREE.CanvasTexture(canvas);
+      this.pageTex.colorSpace = THREE.SRGBColorSpace;
+      this.pageMat.map = this.pageTex;
+      this.pageMat.needsUpdate = true;
+    }
+    this.pageTex.needsUpdate = true;
+  }
+
+  /** The page changed (new ink): re-upload it. */
+  pageChanged(): void {
+    if (this.pageTex) this.pageTex.needsUpdate = true;
   }
 
   setState(name: AnimState, { force = false } = {}): void {
     if (this.state === name && !force) return;
     this.state = name;
     this.stateStart = this.time;
+    this.noteGone = false;
     if (name === 'summon') this.debrisIdx = 0;
     this.beginBlend();
     this.action = null;
@@ -552,6 +741,7 @@ export class Character {
   speakChunk(words: string): void {
     this.bob = 1;
     this.lastStep = -1; // react on this very frame
+    if (isDrawState(this.state)) return; // hands are busy with the notebook: only the head bobs
     if (this.action && this.time - this.action.start < this.action.clip.clip.len * 0.6) return;
     const hit = WORD_GESTURES.find(([re]) => re.test(words));
     let g: GestureName | null = hit ? hit[1] : null;
@@ -561,7 +751,7 @@ export class Character {
 
   /** You clicked him. Returns false if he can't react right now (still climbing out). */
   poke(): boolean {
-    if (this.state === 'summon') return false;
+    if (this.state === 'summon' || isDrawState(this.state)) return false;
     if (this.action?.clip === POKE && this.time - this.action.start < 0.6) return false; // already reeling
     this.action = { clip: POKE, start: this.time, fadeIn: 0.04 }; // the push lands instantly
     this.lastStep = -1;
@@ -606,17 +796,30 @@ export class Character {
     let st = t - this.stateStart;
     this.bob = Math.max(0, this.bob - dt * 5);
 
-    if (this.state === 'summon' && st >= SUMMON.clip.len) {
-      this.setState('idle');
-      this.onStateEnd?.('summon');
+    // one-shot states move on by themselves when their clip ends
+    const next = NEXT[this.state];
+    if (next && st >= CLIPS[this.state].clip.len) {
+      const ended = this.state;
+      this.setState(next);
+      this.onStateEnd?.(ended);
     }
     st = t - this.stateStart;
     const key = this.state === 'waiting' && this.ctx.listening ? 'listening' : this.state;
     if (key !== this.baseKey) { this.baseKey = key; this.beginBlend(); this.action = null; }
 
     // ---- the world around him (hole, flying dirt) moves smoothly every frame
-    this.ground.step(Math.min(0.1, t - this.lastStepTime), this.state === 'summon' ? t - this.stateStart : null);
+    const wdt = Math.min(0.1, t - this.lastStepTime);
+    this.ground.step(wdt, this.state === 'summon' ? t - this.stateStart : null);
+    this.paper.step(wdt);
     this.lastStepTime = t;
+    // the drawing explodes at the top of the throw
+    if (this.state === 'drawToss' && !this.noteGone && t - this.stateStart >= TOSS_EXPLODE_AT) {
+      this.noteGone = true;
+      this.j.note.updateWorldMatrix(true, false);
+      const at = this.root.worldToLocal(this.j.note.getWorldPosition(new THREE.Vector3()));
+      this.paper.burst(at, this.inkColors());
+      this.j.note.visible = false;
+    }
 
     // ---- stop-motion stepping at 15 fps (User himself)
     const step = Math.floor(t * ANIM_FPS);
@@ -633,7 +836,7 @@ export class Character {
     if (!this.action && t >= this.nextActAt) this.startRandomAct();
 
     // ---- sample
-    let p: Pose = this.state === 'summon' ? SUMMON.sample(st) : BASE[key as keyof typeof BASE].sample(st);
+    let p: Pose = CLIPS[key].sample(st);
     if (this.action) {
       const at = t - this.action.start;
       const len = this.action.clip.clip.len;
@@ -660,6 +863,13 @@ export class Character {
     armR.rotation.set(p.armRX + jit(8), p.armRY, p.armRZ + breath * 0.6 + jit(9));
     legL.rotation.set(p.legLX, 0, p.legLZ);
     legR.rotation.set(p.legRX, 0, p.legRZ);
+
+    // props
+    const { note, pen } = this.j;
+    note.visible = p.noteOn > 0.5 && !this.noteGone;
+    note.position.set(p.noteX, p.noteY, p.noteZ);
+    note.rotation.set(p.noteTilt + p.noteSpin, Math.PI + p.noteFlip * Math.PI, p.noteSpin * 0.7);
+    pen.visible = p.penOn > 0.5;
 
     // summon: flicker in and out of existence while climbing out
     // summon: ground breaking open, dirt flying
