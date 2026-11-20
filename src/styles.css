@@ -1,0 +1,91 @@
+@font-face { font-family: 'Creepster'; src: url('../assets/fonts/creepster.woff2') format('woff2'); }
+@font-face { font-family: 'VT323'; src: url('../assets/fonts/vt323.woff2') format('woff2'); }
+
+:root {
+  --osd: #e8ecff;
+  --blue: #2a3cff;
+  --red: #ff2a3c;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #000005; color: var(--osd); font-family: 'VT323', monospace; user-select: none; }
+#stage { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; image-rendering: pixelated; }
+
+/* ---- his words: top-left, scary font ---- */
+#caption {
+  position: fixed; top: 4vh; left: 3.5vw; max-width: min(58vw, 760px);
+  font-family: 'Creepster', cursive; font-size: clamp(22px, 3.3vw, 46px); line-height: 1.12; letter-spacing: 0.04em;
+  color: #dfe4ff;
+  text-shadow: 0 0 6px rgba(40, 60, 255, 0.9), 2px 0 0 rgba(255, 0, 40, 0.55), -2px 0 0 rgba(0, 80, 255, 0.6), 0 0 22px #000;
+  white-space: pre-wrap; pointer-events: none;
+  transition: opacity 1.2s;
+}
+#caption.flicker { animation: flicker 0.18s steps(2) infinite; }
+#caption.error { color: #ffc7cc; text-shadow: 0 0 8px rgba(255, 0, 40, 0.9), 2px 0 0 rgba(255, 0, 40, 0.7), 0 0 22px #000; }
+#caption.fade { opacity: 0; }
+#caption .new { animation: appear 0.25s steps(3); }
+@keyframes appear { 0% { opacity: 0; filter: blur(3px); transform: translateX(-4px); } 100% { opacity: 1; } }
+@keyframes flicker { 0% { opacity: 1; transform: translate(0, 0); } 50% { opacity: 0.82; transform: translate(1px, -1px); } }
+
+/* ---- VCR on-screen display ---- */
+#osd-left, #osd-right {
+  position: fixed; bottom: 3.5vh; font-size: clamp(18px, 2.2vw, 30px); color: var(--osd);
+  text-shadow: 2px 2px 0 #000, 0 0 6px rgba(255, 255, 255, 0.4); pointer-events: none; letter-spacing: 0.06em;
+}
+#osd-left { left: 3.5vw; display: flex; gap: 1.2em; }
+#osd-right { right: 3.5vw; }
+#play { animation: blink 1.6s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0.25; } }
+
+/* ---- status / input ---- */
+#hud { position: fixed; left: 50%; bottom: 11vh; transform: translateX(-50%); width: min(80vw, 760px); text-align: center; pointer-events: none; }
+#status { font-size: clamp(16px, 1.8vw, 24px); opacity: 0.6; text-shadow: 2px 2px 0 #000; letter-spacing: 0.08em; }
+#status.listening { opacity: 1; color: #ff5a68; }
+#status.listening::before { content: '● '; animation: blink 0.8s steps(1) infinite; }
+#heard { font-size: clamp(15px, 1.6vw, 22px); opacity: 0.55; margin-bottom: 0.4em; min-height: 1.2em; text-shadow: 2px 2px 0 #000; }
+#doing { font-size: clamp(18px, 2vw, 28px); color: #9fb0ff; min-height: 1.3em; text-shadow: 0 0 8px var(--blue), 2px 2px 0 #000; letter-spacing: 0.1em; }
+#doing:not(:empty)::before { content: '[ '; } #doing:not(:empty)::after { content: ' ]'; }
+#typebox {
+  display: none; pointer-events: auto; margin: 0.6em auto 0; width: 100%;
+  background: rgba(0, 0, 20, 0.6); border: 1px solid rgba(120, 140, 255, 0.5); color: var(--osd);
+  font: inherit; font-size: clamp(16px, 1.8vw, 24px); padding: 0.3em 0.6em; outline: none;
+}
+#typebox.open { display: block; }
+
+#gear {
+  position: fixed; right: 1vw; top: 1vh; background: none; border: 0; color: var(--osd); opacity: 0.18;
+  font-size: 22px; cursor: pointer;
+}
+#gear:hover { opacity: 0.8; }
+
+/* ---- settings ---- */
+#settings { position: fixed; inset: 0; background: rgba(0, 0, 8, 0.82); display: grid; place-items: center; z-index: 20; }
+#settings[hidden] { display: none; }
+#settings .panel {
+  width: min(92vw, 620px); max-height: 92vh; overflow: auto; padding: 18px 22px;
+  background: #02031a; border: 1px solid #2a3cff; box-shadow: 0 0 30px rgba(42, 60, 255, 0.35);
+  font-size: 20px; user-select: text;
+}
+#settings h2 { margin: 0 0 10px; font-weight: normal; color: #9fb0ff; letter-spacing: 0.1em; }
+#settings fieldset { border: 1px solid #1a2490; margin: 0 0 12px; padding: 8px 12px; }
+#settings fieldset.off { opacity: 0.35; }
+#settings legend { color: #7f8fff; padding: 0 6px; }
+#settings label { display: block; margin: 6px 0; }
+#settings small { opacity: 0.6; }
+#settings input[type=text], #settings input[type=password], #settings select {
+  display: block; width: 100%; margin-top: 3px; background: #000; color: var(--osd); border: 1px solid #2a3cff;
+  font: inherit; font-size: 18px; padding: 4px 8px;
+}
+#settings input[type=range] { width: 100%; accent-color: #2a3cff; }
+#settings input[type=radio], #settings input[type=checkbox] { accent-color: #2a3cff; }
+#settings .row { display: flex; gap: 10px; align-items: center; margin-top: 6px; }
+#settings .spacer { flex: 1; }
+#settings button { background: #000; color: var(--osd); border: 1px solid #2a3cff; font: inherit; font-size: 20px; padding: 3px 14px; cursor: pointer; }
+#settings button.primary { background: #2a3cff; color: #fff; }
+#settings .keys { opacity: 0.5; font-size: 16px; margin: 12px 0 0; }
+
+/* ---- boot screen ---- */
+#boot { position: fixed; inset: 0; background: #000; display: grid; place-content: center; text-align: center; z-index: 30; transition: opacity 0.4s steps(4); }
+#boot.gone { opacity: 0; pointer-events: none; }
+.boot-text { font-size: clamp(28px, 4vw, 54px); letter-spacing: 0.2em; animation: blink 1s steps(1) infinite; }
+#boot-detail { opacity: 0.5; font-size: 18px; margin-top: 8px; min-height: 1.2em; }
